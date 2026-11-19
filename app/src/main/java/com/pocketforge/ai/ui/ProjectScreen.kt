@@ -62,6 +62,8 @@ fun ProjectScreen(
     onUnlock: (String) -> String,
     onPickFiles: () -> Unit = {},
     onProjectClick: (String) -> List<String> = { emptyList() },
+    onOpenChat: (String) -> String = { "" },
+    onImportDocs: () -> Unit = {},
     onEnterProjectChat: (String, String) -> String = { _, _ -> "" },
     notice: String = "",
 ) {
@@ -126,6 +128,9 @@ fun ProjectScreen(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                 }
+                TextButton(onClick = onImportDocs, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("导入文档", fontSize = 12.sp)
+                }
                 TextButton(onClick = onRefresh, contentPadding = PaddingValues(horizontal = 6.dp)) {
                     Text("刷新", fontSize = 12.sp)
                 }
@@ -142,12 +147,7 @@ fun ProjectScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        scope.launch {
-                            fileListTitle = name
-                            fileList = withContext(Dispatchers.IO) { onProjectClick(name) }
-                        }
-                    },
+                    .clickable { onOpenChat(name) },
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -162,6 +162,15 @@ fun ProjectScreen(
                             fontFamily = FontFamily.Monospace,
                         )
                     }
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                fileListTitle = name
+                                fileList = withContext(Dispatchers.IO) { onProjectClick(name) }
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) { Text("文件", fontSize = 11.sp) }
                     Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
