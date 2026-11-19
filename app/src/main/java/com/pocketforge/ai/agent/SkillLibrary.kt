@@ -62,6 +62,8 @@ class SkillLibrary(private val context: Context) {
             "performance.md" to "性能：预算、测量、手段",
             "refactor.md" to "重构：护栏与小步",
             "release-checklist.md" to "发版检查",
+            "remote-update.md" to "发行版远程更新与签名校验",
+            "file-search.md" to "文件与内容搜索策略",
             "android-build.md" to "Android 构建与签名",
             "cli-build-termux.md" to "Termux 内构建",
             "termux.md" to "Termux 桥接与 SSH 加密",
