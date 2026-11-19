@@ -10,3 +10,4 @@
 local.properties
 *.hprof
 /app/build/
+*.apk
