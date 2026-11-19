@@ -11,10 +11,39 @@ import java.io.File
  */
 class SessionStore(private val dir: File) {
 
-    private val file = File(dir, "session.enc")
     private val maxMessages = 200
+    private val titles = File(dir, "session-titles.json")
 
-    fun save(messages: List<ChatMessage>) {
+    private fun fileOf(key: String): File {
+        val safe = key.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        return File(dir, "session-$safe.enc")
+    }
+
+    /** 会话标题（明文小文件，只存名字不存聊天内容） */
+    fun title(key: String, fallback: String): String = runCatching {
+        if (!titles.exists()) return@runCatching fallback
+        org.json.JSONObject(titles.readText()).optString(key, fallback)
+    }.getOrDefault(fallback)
+
+    fun setTitle(key: String, title: String) {
+        runCatching {
+            val obj = if (titles.exists()) org.json.JSONObject(titles.readText()) else org.json.JSONObject()
+            obj.put(key, title)
+            dir.mkdirs()
+            titles.writeText(obj.toString())
+        }
+    }
+
+    fun keys(): List<String> = runCatching {
+        dir.listFiles()?.filter { it.name.startsWith("session-") && it.name.endsWith(".enc") }
+            ?.map { it.name.removePrefix("session-").removeSuffix(".enc") }
+            ?.sortedByDescending { key -> fileOf(key).lastModified() }
+            .orEmpty()
+    }.getOrDefault(emptyList())
+
+    fun exists(key: String): Boolean = fileOf(key).exists()
+
+    fun save(key: String, messages: List<ChatMessage>) {
         try {
             val arr = JSONArray()
             messages.takeLast(maxMessages).forEach { msg ->
@@ -41,14 +70,15 @@ class SessionStore(private val dir: File) {
                     }
                 )
             }
-            CryptoBox.sealToFile(file, arr.toString().toByteArray(Charsets.UTF_8))
+            CryptoBox.sealToFile(fileOf(key), arr.toString().toByteArray(Charsets.UTF_8))
         } catch (t: Throwable) {
             Log.w("SessionStore", "会话加密落盘失败", t)
         }
     }
 
-    fun load(): List<ChatMessage> {
+    fun load(key: String): List<ChatMessage> {
         return try {
+            val file = fileOf(key)
             if (!file.exists()) return emptyList()
             val arr = JSONArray(CryptoBox.openText(file.readText()))
             (0 until arr.length()).mapNotNull { i ->
@@ -72,8 +102,9 @@ class SessionStore(private val dir: File) {
         }
     }
 
-    fun clear() {
+    fun clear(key: String) {
         try {
+            val file = fileOf(key)
             if (file.exists()) file.delete()
         } catch (_: Throwable) {
         }
