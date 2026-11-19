@@ -21,6 +21,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.data.AppConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -47,8 +49,19 @@ fun SettingsScreen(
     onTest: suspend () -> String,
     onInstallSkills: () -> String,
     onClear: () -> Unit,
+    onRequestStorage: () -> Unit,
+    permissionReport: () -> String,
+    selfCheck: () -> String,
 ) {
     val scope = rememberCoroutineScope()
+
+    var permReport by remember { mutableStateOf("") }
+    var checkResult by remember { mutableStateOf("") }
+    var checking by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        permReport = withContext(Dispatchers.IO) { permissionReport() }
+    }
 
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
     var apiKey by remember(config) { mutableStateOf(config.apiKey) }
@@ -198,6 +211,53 @@ fun SettingsScreen(
         if (testResult.isNotEmpty()) {
             Text(testResult, style = MaterialTheme.typography.labelSmall)
         }
+
+        HorizontalDivider()
+        Text("权限体检", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Column(Modifier.padding(12.dp)) {
+                Text(
+                    if (permReport.isBlank()) "检测中…" else permReport,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    lineHeight = 17.sp,
+                )
+                if (checkResult.isNotEmpty()) {
+                    Text(
+                        checkResult,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = {
+                onRequestStorage()
+                scope.launch {
+                    delay(800)
+                    permReport = withContext(Dispatchers.IO) { permissionReport() }
+                }
+            }) {
+                Text(if (hasStorage) "重新检查授权" else "授予所有文件访问")
+            }
+            TextButton(onClick = {
+                checking = true
+                scope.launch {
+                    permReport = withContext(Dispatchers.IO) { permissionReport() }
+                    checkResult = withContext(Dispatchers.IO) { selfCheck() }
+                    checking = false
+                }
+            }, enabled = !checking) {
+                Text(if (checking) "写入测试中…" else "写入自检")
+            }
+        }
+        Text(
+            "Android 11+ 需要在系统设置里手动打开「所有文件访问」；国产 ROM 可能还需允许「读写手机存储」。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         HorizontalDivider()
         Text("运行环境", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
