@@ -78,6 +78,8 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onClear: () -> Unit,
+    onExport: () -> Unit = {},
+    onSwitchSession: () -> Unit = {},
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
@@ -90,6 +92,21 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "会话 · " + state.sessionTitle,
+                fontSize = 11.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            TextButton(onClick = onSwitchSession, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text("切换", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        }
         if (!hasApiKey) SetupCard(onOpenSettings)
         if (!hasStorage) StorageBanner(onRequestStorage)
         PlanCard(state.plan)
@@ -116,6 +133,9 @@ fun ChatScreen(
                             .padding(top = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                     ) {
+                        TextButton(onClick = onExport, enabled = state.messages.isNotEmpty()) {
+                            Text("导出", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        }
                         TextButton(onClick = onClear) {
                             Text("清空本会话", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
