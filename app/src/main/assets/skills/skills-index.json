@@ -1,13 +1,13 @@
 {
-  "version": 3,
+  "version": 4,
   "updated": "2026-11-19",
-  "count": 45,
+  "count": 47,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "2ee0a9343dfcc1e81468a8b5bba19d6fef348e2584dbd4e219161cd3cde79ec2",
-      "bytes": 7755
+      "sha256": "c5665bfecf11c706e277af9a811da9f2292ab28fc0f2c6dc33dc2488f5752c34",
+      "bytes": 7892
     },
     {
       "name": "accessibility-i18n.md",
@@ -118,6 +118,12 @@
       "bytes": 1369
     },
     {
+      "name": "file-search.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/file-search.md",
+      "sha256": "8796ef6d51090ab226853e6f94f26e52ff4d53e66cfbef84f104c41e7c2ce6dd",
+      "bytes": 928
+    },
+    {
       "name": "game-dev.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/game-dev.md",
       "sha256": "833ad89bd5c9ddc4d224a2e6825294d1b06ad3603f9fc882f83202cfa83399ef",
@@ -206,6 +212,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/release-checklist.md",
       "sha256": "e2b7a165d7a654193cbc7381257521f83799bb81619cc039c623e9c8b10dba79",
       "bytes": 607
+    },
+    {
+      "name": "remote-update.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/remote-update.md",
+      "sha256": "98c5f0a1018a72218adf2c3f774c7049c98f8b841bc1b76ceedc949cea016b4e",
+      "bytes": 1357
     },
     {
       "name": "roadmap-planning.md",
