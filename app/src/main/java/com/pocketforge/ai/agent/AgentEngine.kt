@@ -123,7 +123,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     fun encryptedAtRest(): Boolean = configRepo.encryptedAtRest()
 
-    fun saveConfig(config: AppConfig) = configRepo.save(config)
+    fun saveConfig(config: AppConfig): Boolean = configRepo.save(config)
 
     fun currentConfig(): AppConfig = configRepo.config.value
 
@@ -231,8 +231,24 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     private fun buildMessages(config: AppConfig): List<ChatMessage> {
+        trimHistory()
         val system = ChatMessage(role = "system", content = systemPrompt(config))
-        return listOf(system) + history.takeLast(60)
+        return listOf(system) + history
+    }
+
+    /**
+     * 上下文裁剪：上游对 tool 消息有严格顺序要求，
+     * 窗口起点绝不能落在 tool 消息上，否则会 400。
+     */
+    private fun trimHistory(limit: Int = 60) {
+        if (history.isEmpty()) return
+        var start = if (history.size <= limit) 0 else history.size - limit
+        while (start < history.size && history[start].role == "tool") start++
+        if (start >= history.size) {
+            history.clear()
+            return
+        }
+        if (start > 0) history.subList(0, start).clear()
     }
 
     private fun systemPrompt(config: AppConfig): String = buildString {
@@ -305,7 +321,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private fun restoreSession() {
         val restored = sessionStore.load()
         if (restored.isEmpty()) return
-        history.addAll(restored.takeLast(60))
+        history.addAll(restored)
+        trimHistory()
         val visible = restored
             .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
             .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
