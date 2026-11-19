@@ -88,7 +88,8 @@ object CryptoBox {
 
     /** 展示用密钥指纹（不可逆，不泄露密钥本体） */
     fun keyFingerprint(): String = try {
-        val digest = MessageDigest.getInstance("SHA-256").digest(seal("pocketforge".toByteArray()))
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(seal("pocketforge".toByteArray()).toByteArray(Charsets.UTF_8))
         digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(16)
     } catch (t: Throwable) {
         "unknown"
