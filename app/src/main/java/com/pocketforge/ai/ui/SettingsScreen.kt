@@ -107,6 +107,7 @@ fun SettingsScreen(
     var updateProgress by remember { mutableStateOf("") }
     var checkingUpdate by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
+    var downloadPercent by remember { mutableStateOf(0) }
 
     fun buildConfig(): AppConfig = config.copy(
         baseUrl = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" },
@@ -480,7 +481,10 @@ fun SettingsScreen(
                             scope.launch {
                                 onSave(buildConfig())
                                 val result = withContext(Dispatchers.IO) {
-                                    onDownloadInstall { percent, text -> updateProgress = "$percent%  $text" }
+                                    onDownloadInstall { percent, text ->
+                                        updateProgress = "$percent%  $text"
+                                        downloadPercent = percent
+                                    }
                                 }
                                 updateMsg = result
                                 downloading = false
@@ -489,6 +493,11 @@ fun SettingsScreen(
                     ) { Text(if (downloading) "下载中…" else "下载并安装") }
                 }
                 if (updateProgress.isNotEmpty() && downloading) {
+                    Spacer(Modifier.height(6.dp))
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { downloadPercent / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Text(updateProgress, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
                 if (updateMsg.isNotEmpty()) {
