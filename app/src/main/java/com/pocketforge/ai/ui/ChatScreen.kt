@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,16 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.data.MsgUi
 import com.pocketforge.ai.data.StepStatus
@@ -79,16 +90,48 @@ fun ChatScreen(
     onStop: () -> Unit,
     onClear: () -> Unit,
     onExport: () -> Unit = {},
+    onRewind: () -> String = { "" },
     onSwitchSession: () -> Unit = {},
+    onEditMessage: (String, String) -> String = { _, _ -> "" },
+    onToggleNoRecall: () -> String = { "" },
+    onCopyTranscript: () -> String = { "" },
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
+    var noRecall by remember(state.sessionTitle) { mutableStateOf(state.sessionTitle.contains("锁定")) }
+    var editing by remember { mutableStateOf<MsgUi?>(null) }
+    var editText by remember { mutableStateOf("") }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val attachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    }.getOrNull()?.let { bytes ->
+                        val name = runCatching {
+                            context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                                if (c.moveToFirst()) c.getString(0) else null
+                            }
+                        }.getOrNull() ?: "附件"
+                        if (bytes.size > 200_000) null else "【附件：$name】\n" + String(bytes, Charsets.UTF_8) + "\n"
+                    }
+                }
+                if (text == null) input = input + "\n（附件太大或不是文本，未读取；请控制在 200KB 内的 txt/md）"
+                else input = (input + "\n" + text).trim()
+            }
+        }
+    }
     val listState = rememberLazyListState()
     val lastLength = state.messages.lastOrNull()?.text?.length ?: 0
 
+    // 倒序列表：最新消息固定在底部，新内容不会把已有阅读位置顶走
     LaunchedEffect(state.messages.size, lastLength) {
-        val last = state.messages.lastIndex
-        if (last >= 0) listState.scrollToItem(last)
+        if (listState.firstVisibleItemIndex <= 2) {
+            listState.scrollToItem(0)
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -116,14 +159,22 @@ fun ChatScreen(
                 .weight(1f)
                 .fillMaxWidth(),
             state = listState,
+            reverseLayout = true,
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (state.messages.isEmpty()) {
                 item { EmptyHint(onPick = { input = it }) }
             }
-            items(state.messages, key = { it.id }) { message ->
-                MessageRow(message)
+            items(state.messages.asReversed(), key = { it.id }) { message ->
+                MessageRow(
+                    message,
+                    onEditUser = { input = it },
+                    onLongPress = {
+                        editing = it
+                        editText = it.text
+                    },
+                )
             }
             item {
                 if (state.messages.isNotEmpty() && !state.busy) {
@@ -133,7 +184,15 @@ fun ChatScreen(
                             .padding(top = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                     ) {
-                        TextButton(onClick = onExport, enabled = state.messages.isNotEmpty()) {
+                        TextButton(
+                onClick = {
+                    val text = onRewind()
+                    if (text.isNotBlank()) input = text
+                },
+                enabled = state.messages.isNotEmpty() && !state.busy,
+                contentPadding = PaddingValues(horizontal = 6.dp),
+            ) { Text("撤回", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            TextButton(onClick = onExport, enabled = state.messages.isNotEmpty()) {
                             Text("导出", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                         }
                         TextButton(onClick = onClear) {
@@ -149,6 +208,7 @@ fun ChatScreen(
         Composer(
             value = input,
             onValueChange = { input = it },
+            onAttach = { attachLauncher.launch(arrayOf("text/plain", "text/markdown", "application/json", "*/*")) },
             busy = state.busy,
             onSend = {
                 val text = input
@@ -159,6 +219,29 @@ fun ChatScreen(
             },
             onStop = onStop,
         )
+
+        editing?.let { target ->
+            AlertDialog(
+                onDismissRequest = { editing = null },
+                title = { Text("修改这条消息") },
+                text = {
+                    OutlinedTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val msg = onEditMessage(target.id, editText)
+                        editing = null
+                        if (msg != "已修改") input = input
+                    }) { Text("保存") }
+                },
+                dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
+            )
+        }
     }
 }
 
@@ -275,7 +358,12 @@ private fun EmptyHint(onPick: (String) -> Unit) {
 }
 
 @Composable
-private fun MessageRow(message: MsgUi) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun MessageRow(
+    message: MsgUi,
+    onEditUser: (String) -> Unit = {},
+    onLongPress: (MsgUi) -> Unit = {},
+) {
     val isUser = message.role == "user"
     Column(Modifier.fillMaxWidth()) {
         if (isUser) {
@@ -283,7 +371,12 @@ private fun MessageRow(message: MsgUi) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
-                    modifier = Modifier.fillMaxWidth(0.86f),
+                    modifier = Modifier
+                        .fillMaxWidth(0.86f)
+                        .combinedClickable(
+                            onClick = { onEditUser(message.text) },
+                            onLongClick = { onLongPress(message) },
+                        ),
                 ) {
                     Text(
                         message.text,
@@ -510,6 +603,7 @@ private fun Composer(
     busy: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onAttach: () -> Unit = {},
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
         Column {
@@ -520,6 +614,14 @@ private fun Composer(
                     .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                Text(
+                    "附件",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { onAttach() }
+                        .padding(end = 8.dp, bottom = 14.dp),
+                )
                 Surface(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(22.dp),
