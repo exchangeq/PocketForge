@@ -1,5 +1,32 @@
 # 更新日志
 
+## v1.6.0（公开仓库 + 固定签名 + 项目对话页）
+
+**固定签名（可直接覆盖升级）**
+- 引入 `keystore/pocketforge.jks`（仓库外，CI 走 `PF_KEYSTORE_BASE64` 等 4 个 Secret）。
+- `app/build.gradle.kts` 支持 `signingConfigs.release`，口令从 `keystore.properties` 或环境变量读取。
+- 证书 SHA-256 保持 `a5d8a11…f4b40`，已装 1.5.0 可直接覆盖，无需卸载。
+- CI 增加「Restore signing keystore」与「Verify release signature」，每次构建自动核对签名。
+
+**仓库转公开**
+- `exchangeq/PocketForge` 已 public，更新检查与 Release 下载不再需要 token。
+
+**一个项目一个对话页**
+- 会话按项目隔离存储（`filesDir/sessions/session-<key>.enc`，AES 加密落盘）。
+- Chat 顶部显示「会话 · 标题」+「切换」，可打开对话页列表：进入 / 新建。
+- 项目卡弹窗增加「进入项目对话」，点一下直接切到该项目的对话页。
+- 新建项目时自动预备对应对话页（`ensureProjectSession`），不必手动建。
+- 切换会话会保存当前历史、恢复目标历史，技能闸门按会话重置。
+
+**其它新功能**
+- 会话导出 Markdown 到工作区 `exports/chat-*.md`（含工具调用摘要）。
+- 设置页显示「工作区 / 会话 / 缓存」占用，可一键清理缓存（保留安装包）。
+- 新建项目支持骨架规模：最小 / 标准 / 完整。
+- 项目已存在时只补齐缺失文件，不覆盖已有内容。
+
+**包体**：release 约 12MB，签名 `a5d8a116…f4b40`。
+
+
 ## v1.5.0（远程更新可用 + 文件注入 + 逻辑修正）
 
 **GitHub Actions 已跑通**
