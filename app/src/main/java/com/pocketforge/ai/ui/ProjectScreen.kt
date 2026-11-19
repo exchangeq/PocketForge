@@ -1,5 +1,7 @@
 package com.pocketforge.ai.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,11 +19,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,10 +48,16 @@ private val TYPES = listOf("game" to "游戏", "writing" to "写作", "app" to "
 fun ProjectScreen(
     workspacePath: String,
     projects: List<String>,
-    skills: List<Pair<String, String>>,
+    skills: List<Triple<String, String, Boolean>>,
+    forced: Boolean,
+    repoUrl: String,
     onRefresh: () -> Unit,
     onCreate: (String, String, String) -> String,
     onSkillClick: (String) -> String,
+    onSyncBundled: () -> String,
+    onRemoteInstall: (String, Boolean) -> String,
+    onForceInject: () -> String,
+    onDisableForce: () -> String,
 ) {
     val scope = rememberCoroutineScope()
     var showCreate by remember { mutableStateOf(false) }
@@ -59,74 +67,240 @@ fun ProjectScreen(
     var message by remember { mutableStateOf("") }
     var skillContent by remember { mutableStateOf<String?>(null) }
     var skillTitle by remember { mutableStateOf("") }
+    var installUrl by remember { mutableStateOf("") }
+    var forceInstall by remember { mutableStateOf(true) }
+    var working by remember { mutableStateOf(false) }
 
-    Column(
-        Modifier
+    LazyColumn(
+        modifier = Modifier
             .fillMaxSize()
-            .padding(14.dp),
+            .padding(horizontal = 14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 12.dp),
     ) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(Modifier.padding(12.dp)) {
-                Text("工作区", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(workspacePath, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        "工作区",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(workspacePath, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    Text(
+                        "写入只发生在这里；读手机根目录请到「设置」确认文件权限。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { showCreate = true },
+                ) {
+                    Text(
+                        "新建项目骨架",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+                TextButton(onClick = onRefresh, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("刷新", fontSize = 12.sp)
+                }
+                Spacer(Modifier.weight(1f))
                 Text(
-                    "写入只发生在这里；读手机根目录请到「设置」确认文件权限。",
+                    "${projects.size} 个项目",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { showCreate = true }) { Text("新建项目骨架") }
-            TextButton(onClick = onRefresh) { Text("刷新") }
-        }
-        if (message.isNotEmpty()) {
-            Text(message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        }
-
-        HorizontalDivider()
-        Text("项目（${projects.size}）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-
-        if (projects.isEmpty()) {
-            Text(
-                "还没有项目。新建一个，或直接在对话里让 AI 建。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            contentPadding = PaddingValues(vertical = 4.dp),
-        ) {
-            items(projects) { name ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        items(projects) { name ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
                         Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            "$workspacePath/projects/$name",
+                            "projects/$name",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                    Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+
+        item {
+            if (projects.isEmpty()) {
+                Text(
+                    "还没有项目。新建一个，或直接在对话里让 AI 建。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        item {
+            Column(Modifier.padding(top = 6.dp)) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                SectionTitle(
+                    "技能中心",
+                    if (forced) "强制注入已开启：本工作区只认 skills/ 里的文件（不影响别的项目）"
+                    else "内置基线 + 工作区覆盖；远程可注入 .md 或 skills-index.json 清单"
+                )
+            }
+        }
+
+        item {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = installUrl,
+                        onValueChange = { installUrl = it },
+                        label = { Text("技能地址（目录或 .md / .json）") },
+                        placeholder = { Text(repoUrl) },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(checked = forceInstall, onCheckedChange = { forceInstall = it })
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("覆盖并强制注入", style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                "只对当前工作区生效",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(
+                            enabled = !working,
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            onClick = {
+                                working = true
+                                scope.launch {
+                                    message = withContext(Dispatchers.IO) {
+                                        onRemoteInstall(installUrl.trim(), forceInstall)
+                                    }
+                                    working = false
+                                }
+                            },
+                        ) { Text(if (working) "注入中…" else "远程注入") }
+                        TextButton(
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            onClick = {
+                                scope.launch {
+                                    message = withContext(Dispatchers.IO) { onSyncBundled() }
+                                }
+                            },
+                        ) { Text("同步内置") }
+                        if (forced) {
+                            TextButton(
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                onClick = { message = onDisableForce() },
+                            ) { Text("取消强制") }
+                        } else {
+                            TextButton(
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                onClick = {
+                                    scope.launch {
+                                        message = withContext(Dispatchers.IO) { onForceInject() }
+                                    }
+                                },
+                            ) { Text("强制注入") }
+                        }
+                    }
+                    if (message.isNotEmpty()) {
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            lineHeight = 16.sp,
                         )
                     }
                 }
             }
         }
 
-        HorizontalDivider()
-        Text("技能库（Markdown 规范）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        skills.forEach { (file, desc) ->
-            ClickRow(title = file, subtitle = desc) {
-                skillTitle = file
-                skillContent = onSkillClick(file)
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Text("技能文件", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${skills.count { it.third }}/${skills.size} 已注入",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+
+        items(skills) { (name, desc, installed) ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        skillTitle = name
+                        skillContent = onSkillClick(name)
+                    },
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        Text(
+                            desc,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = if (installed) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Text(
+                            if (installed) "已注入" else "内置",
+                            fontSize = 10.sp,
+                            color = if (installed) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(20.dp)) }
     }
 
     if (showCreate) {
@@ -140,6 +314,7 @@ fun ProjectScreen(
                         onValueChange = { projectName = it },
                         label = { Text("项目名") },
                         singleLine = true,
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
@@ -160,6 +335,7 @@ fun ProjectScreen(
                         onValueChange = { projectEngine = it },
                         label = { Text("引擎/框架（可留空）") },
                         singleLine = true,
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
@@ -176,18 +352,14 @@ fun ProjectScreen(
                     if (name.isNotEmpty()) {
                         showCreate = false
                         scope.launch {
-                            message = withContext(Dispatchers.IO) {
-                                onCreate(name, projectType, projectEngine.trim())
-                            }
+                            message = withContext(Dispatchers.IO) { onCreate(name, projectType, projectEngine.trim()) }
                             projectName = ""
                             onRefresh()
                         }
                     }
                 }) { Text("创建") }
             },
-            dismissButton = {
-                TextButton(onClick = { showCreate = false }) { Text("取消") }
-            },
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("取消") } },
         )
     }
 
@@ -195,21 +367,19 @@ fun ProjectScreen(
     if (content != null) {
         AlertDialog(
             onDismissRequest = { skillContent = null },
-            title = { Text(skillTitle) },
+            title = { Text(skillTitle, style = MaterialTheme.typography.titleMedium) },
             text = {
                 SelectionContainer {
                     Column(
                         Modifier
-                            .heightIn(max = 420.dp)
+                            .heightIn(max = 440.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Text(content, fontSize = 12.sp, lineHeight = 17.sp, fontFamily = FontFamily.Monospace)
+                        MarkdownText(source = content, baseSize = 13, baseLine = 20)
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { skillContent = null }) { Text("关闭") }
-            },
+            confirmButton = { TextButton(onClick = { skillContent = null }) { Text("关闭") } },
         )
     }
 }
