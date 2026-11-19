@@ -185,6 +185,19 @@ fun AppRoot() {
                     selfCheck = { engine.storageSelfCheck() },
                     onTermuxTest = { withContext(Dispatchers.IO) { engine.termuxTest() } },
                     onTrustHostKey = { engine.trustNewHostKey() },
+                    currentVersion = engine.currentVersion(),
+                    onCheckUpdate = { withContext(Dispatchers.IO) { engine.checkUpdate() } },
+                    onDownloadInstall = { onProgress ->
+                        withContext(Dispatchers.IO) { engine.downloadAndInstallUpdate(onProgress) }
+                    },
+                    onOpenUrl = { url ->
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
                 )
             }
         }
