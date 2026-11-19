@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,9 +20,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.MailOutline
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,13 +42,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.agent.AgentEngine
 import com.pocketforge.ai.data.ConfigRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AppRoot() {
@@ -53,6 +65,8 @@ fun AppRoot() {
     var tab by remember { mutableStateOf(0) }
     var hasStorage by remember { mutableStateOf(engine.hasAllFilesAccess()) }
     var projects by remember { mutableStateOf(engine.projectNames()) }
+    var skills by remember { mutableStateOf(engine.skillStatus()) }
+    var forced by remember { mutableStateOf(engine.forceInjected()) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -63,6 +77,8 @@ fun AppRoot() {
 
     LaunchedEffect(Unit) {
         projects = engine.projectNames()
+        skills = engine.skillStatus()
+        forced = engine.forceInjected()
         while (true) {
             hasStorage = engine.hasAllFilesAccess()
             delay(1200)
@@ -75,6 +91,7 @@ fun AppRoot() {
         Modifier
             .fillMaxSize()
             .imePadding()
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Header(
             projectName = state.projectName,
@@ -102,16 +119,45 @@ fun AppRoot() {
                     onClear = { engine.clearSession() },
                     onOpenSettings = { tab = 2 },
                 )
+
                 1 -> ProjectScreen(
                     workspacePath = engine.workspacePath(),
                     projects = projects,
-                    skills = engine.skillEntries(),
-                    onRefresh = { projects = engine.projectNames() },
+                    skills = skills,
+                    forced = forced,
+                    repoUrl = config.skillRepoUrl,
+                    onRefresh = {
+                        projects = engine.projectNames()
+                        skills = engine.skillStatus()
+                    },
                     onCreate = { name, type, engineName ->
                         engine.createProject(name, type, engineName).summary
                     },
                     onSkillClick = { engine.skillText(it) },
+                    onSyncBundled = {
+                        val result = engine.installSkills()
+                        skills = engine.skillStatus()
+                        result
+                    },
+                    onRemoteInstall = { url, force ->
+                        val result = engine.installRemoteSkills(url, config.skillRepoToken, force)
+                        skills = engine.skillStatus()
+                        forced = engine.forceInjected()
+                        result
+                    },
+                    onForceInject = {
+                        val result = engine.forceInjectFromBundle()
+                        skills = engine.skillStatus()
+                        forced = engine.forceInjected()
+                        result
+                    },
+                    onDisableForce = {
+                        val result = engine.disableForceInject()
+                        forced = engine.forceInjected()
+                        result
+                    },
                 )
+
                 else -> SettingsScreen(
                     config = config,
                     workspacePath = engine.workspacePath(),
@@ -119,7 +165,7 @@ fun AppRoot() {
                     encryptedAtRest = engine.encryptedAtRest(),
                     hasStorage = hasStorage,
                     onSave = { engine.saveConfig(it) },
-                    onTest = { engine.testConnection() },
+                    onTest = { withContext(Dispatchers.IO) { engine.testConnection() } },
                     onInstallSkills = { engine.installSkills() },
                     onClear = { engine.clearSession() },
                     onRequestStorage = {
@@ -127,6 +173,8 @@ fun AppRoot() {
                     },
                     permissionReport = { engine.permissionReport() },
                     selfCheck = { engine.storageSelfCheck() },
+                    onTermuxTest = { withContext(Dispatchers.IO) { engine.termuxTest() } },
+                    onTrustHostKey = { engine.trustNewHostKey() },
                 )
             }
         }
@@ -162,77 +210,111 @@ private fun Header(
     hasKey: Boolean,
     onOpenSettings: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                    .padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("PF", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("PocketForge", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "项目：$projectName" + if (busy) " · 运行中" else "",
+                        "PocketForge",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "$projectName" + if (busy) " · 生成中" else " · 待命",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = CircleShape,
                     color = if (hasKey) MaterialTheme.colorScheme.surfaceVariant
                     else MaterialTheme.colorScheme.primaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier.clickable(onClick = onOpenSettings),
                 ) {
-                    Text(
-                        if (hasKey) "密钥已加密 · 设置 ›" else "未配置密钥 · 去填 ›",
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        color = if (hasKey) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(
+                                    if (hasKey) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.error,
+                                    CircleShape,
+                                )
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (hasKey) "已加密" else "未配置密钥",
+                            fontSize = 11.sp,
+                            color = if (hasKey) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                 }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 }
 
 @Composable
 private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
-    val labels = listOf("对话", "项目", "设置")
+    val items = listOf(
+        Triple("对话", Icons.Default.MailOutline, 0),
+        Triple("项目", Icons.Default.List, 1),
+        Triple("设置", Icons.Default.Settings, 2),
+    )
     Column {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
-                .height(52.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            labels.forEachIndexed { index, label ->
+            items.forEach { (label, icon: ImageVector, index) ->
+                val active = current == index
                 Column(
                     modifier = Modifier
                         .clickable { onSelect(index) }
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 18.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Icon(
+                        icon,
+                        contentDescription = label,
+                        tint = if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(19.dp),
+                    )
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         label,
-                        fontSize = 13.sp,
-                        fontWeight = if (current == index) FontWeight.Bold else FontWeight.Normal,
-                        color = if (current == index) MaterialTheme.colorScheme.primary
+                        fontSize = 12.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                        color = if (active) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(2.dp))
-                    Surface(
-                        modifier = Modifier
-                            .width(18.dp)
-                            .height(2.dp),
-                        color = if (current == index) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surface,
-                    ) {}
                 }
             }
         }
