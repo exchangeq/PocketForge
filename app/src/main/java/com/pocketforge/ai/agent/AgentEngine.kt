@@ -54,6 +54,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private val sessionStore = SessionStore(File(appContext.filesDir, "sessions"))
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private var sessionKey: String = "main"
     private var job: Job? = null
     private var lastTextEmit = 0L
     private val history = mutableListOf<ChatMessage>()
@@ -131,7 +132,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     lastError = "未配置 API Key",
                 )
             }
-            sessionStore.save(history)
+            sessionStore.save(sessionKey, history)
             return
         }
 
@@ -168,7 +169,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                         messages = st.messages.map { m -> if (m.streaming) m.copy(streaming = false) else m },
                     )
                 }
-                sessionStore.save(history)
+                sessionStore.save(sessionKey, history)
             }
         }
     }
@@ -183,8 +184,85 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         history.clear()
         readSkills.clear()
         indexRead = false
-        sessionStore.clear()
-        _ui.value = UiState()
+        sessionStore.clear(sessionKey)
+        val title = sessionStore.title(sessionKey, "主对话")
+        _ui.value = UiState(projectName = title, sessionTitle = title)
+    }
+
+    // ---------------- 多会话（一个项目一个对话页） ----------------
+
+    fun currentSessionKey(): String = sessionKey
+
+    fun currentSessionTitle(): String = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
+
+    /** 列出会话：key / 标题 / 消息条数 */
+    fun sessions(): List<Triple<String, String, Int>> {
+        val keys = (listOf("main") + sessionStore.keys()).distinct()
+        return keys.map { key ->
+            val title = sessionStore.title(key, if (key == "main") "主对话" else key)
+            Triple(key, title, sessionStore.load(key).count { it.role == "user" || it.role == "assistant" })
+        }
+    }
+
+    /** 切换会话：先保存当前，再载入目标 */
+    fun switchSession(key: String): Boolean {
+        if (key == sessionKey) return true
+        job?.cancel()
+        sessionStore.save(sessionKey, history)
+        history.clear()
+        readSkills.clear()
+        indexRead = false
+        sessionKey = key
+        history.addAll(sessionStore.load(key))
+        val title = sessionStore.title(key, if (key == "main") "主对话" else key)
+        val visible = history
+            .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
+            .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
+        _ui.value = UiState(messages = visible, projectName = title, sessionTitle = title)
+        return true
+    }
+
+    /** 新建一个会话页；key 为空则生成临时 key */
+    fun newSession(title: String, key: String = "chat-" + System.currentTimeMillis()): String {
+        sessionStore.save(sessionKey, history)
+        sessionKey = key
+        history.clear()
+        readSkills.clear()
+        indexRead = false
+        sessionStore.setTitle(key, title)
+        _ui.value = UiState(projectName = title, sessionTitle = title)
+        return key
+    }
+
+    fun slugOf(name: String): String = name.trim().lowercase()
+        .replace(Regex("[^a-z0-9\\u4e00-\\u9fff]+"), "-")
+        .trim('-').ifEmpty { "project-" + System.currentTimeMillis() }
+
+    fun enterProjectSessionByName(name: String): String = enterProjectSession(slugOf(name), name)
+
+    /** 只建页不切走：创建项目时后台预备一个对话页 */
+    fun ensureProjectSession(name: String): String {
+        val key = "project-" + slugOf(name)
+        if (!sessionStore.exists(key)) {
+            sessionStore.setTitle(key, name)
+            sessionStore.save(key, emptyList())
+            return "已为「$name」新建对话页"
+        }
+        return "「$name」已有对话页"
+    }
+
+    /** 项目专属会话：已存在则直接进入，否则新建并进入 */
+    fun enterProjectSession(slug: String, title: String): String {
+        val key = "project-" + slug
+        val existed = sessionStore.exists(key)
+        if (!existed) {
+            sessionStore.setTitle(key, title)
+            sessionStore.save(key, emptyList())
+        }
+        switchSession(key)
+        sessionStore.setTitle(key, title)
+        _ui.update { it.copy(projectName = title, sessionTitle = title) }
+        return if (existed) "已进入「$title」的对话页" else "已为「$title」新建对话页"
     }
 
     fun workspacePath(): String = runCatching { sandbox.workspace().absolutePath }.getOrElse { "不可用" }
@@ -388,6 +466,57 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     fun currentVersion(): String = updater.currentVersion()
 
+    /** 会话导出为 Markdown，落在工作区 exports/ */
+    fun exportSession(): String = runCatching {
+        val ws = sandbox.workspace()
+        val dir = File(ws, "exports").apply { mkdirs() }
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        val file = File(dir, "chat-" + stamp + ".md")
+        val md = StringBuilder()
+        md.appendLine("# PocketForge 会话记录").appendLine()
+        md.appendLine("- 导出时间：" + stamp)
+        md.appendLine("- 模型：" + configRepo.config.value.model)
+        md.appendLine("- 消息数：" + history.size).appendLine()
+        history.forEach { m ->
+            when (m.role) {
+                "user" -> md.appendLine("## 用户").appendLine().appendLine(m.content.orEmpty()).appendLine()
+                "assistant" -> {
+                    md.appendLine("## 助手").appendLine()
+                    m.toolCalls?.forEach { tc ->
+                        md.appendLine("- 工具 `" + tc.name + "` " + tc.arguments.take(160))
+                    }
+                    if (!m.content.isNullOrBlank()) md.appendLine().appendLine(m.content)
+                    md.appendLine()
+                }
+                "tool" -> md.appendLine("- 工具结果：" + m.content.orEmpty().lines().firstOrNull().orEmpty().take(200))
+            }
+        }
+        file.writeText(md.toString())
+        "已导出：exports/" + file.name + "（" + md.length + " 字符）"
+    }.getOrElse { "导出失败：" + it.message }
+
+    /** 存储占用概览 */
+    fun storageUsage(): String = runCatching {
+        fun size(f: File): Long = if (!f.exists()) 0 else if (f.isFile) f.length() else f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        fun mb(v: Long) = String.format("%.1fMB", v / 1048576.0)
+        val ws = sandbox.workspace()
+        val data = File(appContext.filesDir, "sessions")
+        val cache = appContext.cacheDir
+        "工作区 " + mb(size(ws)) + " · 会话 " + mb(size(data)) + " · 缓存 " + mb(size(cache))
+    }.getOrElse { "统计失败：" + it.message }
+
+    /** 清理缓存（保留 update 目录里的安装包） */
+    fun clearCache(): String = runCatching {
+        val cache = appContext.cacheDir
+        var freed = 0L
+        cache.listFiles()?.forEach { child ->
+            if (child.name == "update") return@forEach
+            freed += if (child.isDirectory) child.walkTopDown().filter { it.isFile }.sumOf { it.length() } else child.length()
+            if (child.isDirectory) child.deleteRecursively() else child.delete()
+        }
+        "已清理缓存 " + String.format("%.1fMB", freed / 1048576.0)
+    }.getOrElse { "清理失败：" + it.message }
+
     fun checkUpdate(): String {
         val r = updater.check()
         val rel = r.release
@@ -419,7 +548,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         return "已清除记录的主机指纹，下次连接会重新学习"
     }
 
-    fun createProject(name: String, type: String, engine: String): ToolResult {
+    fun createProject(name: String, type: String, engine: String, scale: String = "standard"): ToolResult {
         // 用户手动点「新建」＝已确认意图，这里补记技能读取，避免闸门把骨架拦在半路
         indexRead = true
         readSkills.add("SKILLS.md")
@@ -429,6 +558,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             .put("name", name)
             .put("type", type)
             .put("engine", engine)
+            .put("scale", scale)
             .toString()
         return tools.dispatch("project_new", args)
     }
@@ -522,7 +652,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 history.add(
                     ChatMessage(role = "tool", toolCallId = call.id, content = result.forModel())
                 )
-                sessionStore.save(history)
+                sessionStore.save(sessionKey, history)
             }
         }
     }
@@ -644,14 +774,15 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     // ---------------- 杂项 ----------------
 
     private fun restoreSession() {
-        val restored = sessionStore.load()
+        val restored = sessionStore.load(sessionKey)
         if (restored.isEmpty()) return
         history.addAll(restored)
         trimHistory()
         val visible = restored
             .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
             .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
-        _ui.update { it.copy(messages = visible) }
+        val title = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
+        _ui.update { it.copy(messages = visible, sessionTitle = title, projectName = title) }
     }
 
     private fun prettyArgs(raw: String): String {
