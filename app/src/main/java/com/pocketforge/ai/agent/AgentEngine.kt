@@ -1,6 +1,8 @@
 package com.pocketforge.ai.agent
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
@@ -280,6 +282,85 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         "已关闭强制注入，之后缺失的技能会回退到内置基线"
     }.getOrElse { "取消失败：${it.message}" }
 
+    // ---------------- 本地文件注入 ----------------
+
+    /** 从系统文件选择器拿到的 .md/.txt 直接注入到当前工作区的 skills/ */
+    fun installSkillFiles(uris: List<Uri>): String {
+        if (uris.isEmpty()) return "没有选中文件"
+        val ws = runCatching { sandbox.workspace() }.getOrNull() ?: return "工作区不可用"
+        val dir = skills.skillsDir(ws).apply { mkdirs() }
+        val ok = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+        uris.forEach { uri ->
+            val name = displayName(uri) ?: ("skill-" + System.currentTimeMillis() + ".md")
+            val text = runCatching {
+                appContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            when {
+                text == null -> failed.add("$name（读不出来）")
+                text.length < 16 -> failed.add("$name（内容太短）")
+                text.length > 512 * 1024 -> failed.add("$name（超过 512KB）")
+                !text.contains("#") -> failed.add("$name（不是 Markdown）")
+                else -> {
+                    val target = java.io.File(dir, skills.sanitizeName(name))
+                    target.writeText(text)
+                    ok.add(target.name)
+                }
+            }
+        }
+        if (ok.isNotEmpty()) {
+            indexRead = true
+            readSkills.add("SKILLS.md")
+            _ui.update { it.copy(skillsLoaded = true) }
+        }
+        return buildString {
+            if (ok.isNotEmpty()) append("已注入 ${ok.size} 个技能：").append(ok.joinToString("、"))
+            if (failed.isNotEmpty()) {
+                if (isNotEmpty()) append("\n")
+                append("未注入：").append(failed.joinToString("、"))
+            }
+            append("\n目录：").append(dir.absolutePath)
+        }
+    }
+
+    private fun displayName(uri: Uri): String? = runCatching {
+        appContext.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val index = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && c.moveToFirst()) c.getString(index) else null
+        }
+    }.getOrNull()
+
+    /** 项目文件树（最多 200 项），给项目页展开用 */
+    fun projectFiles(projectName: String): List<String> {
+        val root = runCatching { sandbox.projectsDir() }.getOrElse { return emptyList() }
+        val dir = root.listFiles()?.firstOrNull { d ->
+            d.isDirectory && (d.name == projectName || runCatching {
+                org.json.JSONObject(java.io.File(d, ".pocketforge/project.json").readText()).optString("name") == projectName
+            }.getOrDefault(false))
+        } ?: return emptyList()
+        val out = mutableListOf<String>()
+        fun walk(f: java.io.File, prefix: String, depth: Int) {
+            if (out.size >= 200 || depth > 4) return
+            f.listFiles()?.sortedBy { it.name }?.forEach { child ->
+                if (out.size >= 200) return
+                if (child.name.startsWith(".") && child.name != ".pocketforge") return@forEach
+                val rel = if (prefix.isEmpty()) child.name else prefix + "/" + child.name
+                if (child.isDirectory) {
+                    out.add(rel + "/")
+                    walk(child, rel, depth + 1)
+                } else out.add(rel)
+            }
+        }
+        walk(dir, "", 0)
+        return out
+    }
+
+    /** 有新版本时返回 tag，否则 null */
+    fun updateAvailable(): String? = runCatching {
+        val r = updater.check()
+        if (!r.upToDate) r.release?.tag else null
+    }.getOrNull()
+
     fun lockedDocs(): List<Pair<String, String>> = runCatching {
         val ws = sandbox.workspace()
         DocLocks { ws }.list().map { entry ->
@@ -299,6 +380,11 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }.getOrElse { "解锁失败：${it.message}" }
 
     // ---------------- 远程更新 ----------------
+
+    /** 给 UI 用的后台执行入口，跑在引擎自己的 IO 作用域 */
+    fun onIo(block: suspend () -> Unit) {
+        scope.launch { runCatching { block() } }
+    }
 
     fun currentVersion(): String = updater.currentVersion()
 
