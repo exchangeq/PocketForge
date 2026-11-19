@@ -3,7 +3,10 @@ package com.pocketforge.ai.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.os.Build
+import android.os.PowerManager
 import android.widget.Toast
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +40,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.agent.AgentEngine
+import com.pocketforge.ai.service.KeepAliveService
 import com.pocketforge.ai.data.ConfigRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -77,6 +83,10 @@ fun AppRoot() {
     var notice by remember { mutableStateOf("") }
     var updateTag by remember { mutableStateOf<String?>(null) }
     var showSessions by remember { mutableStateOf(false) }
+    var sessionQuery by remember { mutableStateOf("") }
+    var sessionHits by remember { mutableStateOf(listOf<com.pocketforge.ai.data.SessionHit>()) }
+    var renameTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var renameText by remember { mutableStateOf("") }
     var sessionList by remember { mutableStateOf<List<Triple<String, String, Int>>>(emptyList()) }
     var updateDismissed by remember { mutableStateOf(false) }
 
@@ -97,6 +107,19 @@ fun AppRoot() {
         }
     }
 
+    var keepAlive by remember { mutableStateOf(KeepAliveService.isEnabled(context)) }
+    val notifyPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        keepAlive = granted
+        KeepAliveService.setEnabled(context, granted)
+        Toast.makeText(
+            context,
+            if (granted) "后台常驻已开启" else "没给通知权限，前台服务无法常驻",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     val skillPickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -106,6 +129,7 @@ fun AppRoot() {
     }
 
     LaunchedEffect(Unit) {
+        if (KeepAliveService.isEnabled(context)) runCatching { KeepAliveService.start(context) }
         withContext(Dispatchers.IO) {
             runCatching { updateTag = engine.updateAvailable() }
         }
@@ -164,21 +188,61 @@ fun AppRoot() {
                 title = { Text("对话页", style = MaterialTheme.typography.titleMedium) },
                 text = {
                     Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = sessionQuery,
+                                onValueChange = { sessionQuery = it },
+                                label = { Text("搜索所有对话") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = {
+                                sessionHits = if (sessionQuery.isBlank()) emptyList() else engine.searchChats(sessionQuery)
+                            }) { Text("搜索") }
+                        }
+                        if (sessionHits.isNotEmpty()) {
+                            Text("命中 ${sessionHits.size} 条", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            sessionHits.forEach { hit ->
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .clickable {
+                                            engine.switchSession(hit.key)
+                                            showSessions = false
+                                        }
+                                        .padding(vertical = 6.dp),
+                                ) {
+                                    Text(hit.title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    Text(hit.snippet, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                            }
+                            Text("──── 对话列表 ────", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
+                        }
                         sessionList.forEach { (key, title, count) ->
                             Row(
-                                Modifier.fillMaxWidth()
-                                    .clickable {
-                                        engine.switchSession(key)
-                                        showSessions = false
-                                    }
-                                    .padding(vertical = 10.dp),
+                                Modifier.fillMaxWidth().padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(Modifier.weight(1f)) {
+                                Column(
+                                    Modifier.weight(1f).clickable {
+                                        engine.switchSession(key)
+                                        showSessions = false
+                                    },
+                                ) {
                                     Text(title, fontSize = 14.sp, fontWeight = if (key == engine.currentSessionKey()) FontWeight.Bold else FontWeight.Normal)
                                     Text("$count 条 · $key", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                Text("进入", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                TextButton(
+                                    onClick = { renameTarget = key to title; renameText = title },
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                ) { Text("改名", fontSize = 10.sp) }
+                                TextButton(
+                                    onClick = {
+                                        engine.deleteSession(key)
+                                        sessionList = engine.sessions()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                ) { Text("删除", fontSize = 10.sp, color = MaterialTheme.colorScheme.error) }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                         }
@@ -193,6 +257,30 @@ fun AppRoot() {
                     }) { Text("新建对话") }
                 },
                 dismissButton = { TextButton(onClick = { showSessions = false }) { Text("关闭") } },
+            )
+        }
+
+        renameTarget?.let { (key, oldTitle) ->
+            AlertDialog(
+                onDismissRequest = { renameTarget = null },
+                title = { Text("重命名对话页") },
+                text = {
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = { renameText = it },
+                        label = { Text("新名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        engine.renameSession(key, renameText)
+                        sessionList = engine.sessions()
+                        renameTarget = null
+                    }) { Text("保存") }
+                },
+                dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
             )
         }
 
@@ -247,6 +335,8 @@ fun AppRoot() {
                         val session = engine.ensureProjectSession(name)
                         r.summary + "\n" + session
                     },
+                    onReadFile = { path -> engine.readFileText(path) },
+                    onSaveFile = { path, text -> engine.saveFileText(path, text) },
                     onImportDocs = { docPickLauncher.launch(arrayOf("text/*", "application/markdown", "application/octet-stream")) },
                     onOpenChat = { name ->
                         tab = 0
@@ -312,6 +402,47 @@ fun AppRoot() {
                     selfCheck = { engine.storageSelfCheck() },
                     onTermuxTest = { withContext(Dispatchers.IO) { engine.termuxTest() } },
                     onTrustHostKey = { engine.trustNewHostKey() },
+                    keepAlive = keepAlive,
+                    onToggleKeepAlive = { on ->
+                        if (on) {
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notifyPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                keepAlive = true
+                                KeepAliveService.setEnabled(context, true)
+                                Toast.makeText(context, "后台常驻已开启", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            keepAlive = false
+                            KeepAliveService.setEnabled(context, false)
+                            Toast.makeText(context, "已关闭后台常驻", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onBatteryWhitelist = {
+                        runCatching {
+                            val pm = context.getSystemService(PowerManager::class.java)
+                            if (pm != null && !pm.isIgnoringBatteryOptimizations(context.packageName)) {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + context.packageName))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } else {
+                                Toast.makeText(context, "已在电池优化白名单里", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    onAppSettings = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    onUsage = { engine.usageSummary() },
+                    onResetUsage = { engine.resetUsage() },
                     onStorageUsage = { engine.storageUsage() },
                     onClearCache = { engine.clearCache() },
                     currentVersion = engine.currentVersion(),
