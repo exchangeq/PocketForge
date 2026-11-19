@@ -343,6 +343,7 @@ class ToolRegistry(
         val engine = args.optString("engine", "").trim()
         val slug = slugify(name)
         val dir = sandbox.resolveWrite(File(sandbox.projectsDir(), slug).absolutePath)
+        val existed = File(dir, ".pocketforge/project.json").exists()
         dir.mkdirs()
 
         val skillName = skills.skillFor(type)
@@ -472,12 +473,16 @@ class ToolRegistry(
         }
         onProjectOpened(name)
 
-        val tip = if (skillText.isNotBlank()) "\n\n已为该类型匹配技能 $skillName。" else ""
-        return ToolResult(
-            true,
-            "项目 $name 已就绪：${dir.absolutePath}（新建 ${created.size} 项）$tip",
-            created.joinToString("\n")
-        )
+        val tip = buildString {
+            if (existed) append("\n\n项目已存在：只补齐缺失文件，没覆盖你已有的内容。")
+            if (skillText.isNotBlank()) append("\n已匹配技能 $skillName。")
+        }
+        val head = when {
+            existed && created.isEmpty() -> "项目 $name 已经完整，无需新建：${dir.absolutePath}"
+            existed -> "项目 $name 已补齐 ${created.size} 项：${dir.absolutePath}"
+            else -> "项目 $name 已就绪：${dir.absolutePath}（新建 ${created.size} 项）"
+        }
+        return ToolResult(true, head + tip, created.joinToString("\n"))
     }
 
     private fun planSet(args: JSONObject): ToolResult {
