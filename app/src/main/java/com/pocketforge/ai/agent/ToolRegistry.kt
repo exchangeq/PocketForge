@@ -341,6 +341,8 @@ class ToolRegistry(
         require(name.isNotEmpty()) { "缺少参数 name" }
         val type = args.optString("type", "game").lowercase()
         val engine = args.optString("engine", "").trim()
+        var scale = args.optString("scale", "full").lowercase()
+        if (scale !in setOf("minimal", "standard", "full")) scale = "full"
         val slug = slugify(name)
         val dir = sandbox.resolveWrite(File(sandbox.projectsDir(), slug).absolutePath)
         val existed = File(dir, ".pocketforge/project.json").exists()
@@ -359,7 +361,7 @@ class ToolRegistry(
             }
         }
 
-        when (type) {
+        if (scale != "minimal") when (type) {
             "writing", "book", "write", "写作" -> {
                 listOf("chapters", "characters", "worldbuilding", "notes", "export").forEach { folder ->
                     File(dir, folder).mkdirs(); created.add("$folder/")
@@ -382,7 +384,7 @@ class ToolRegistry(
             }
         }
 
-        skeletons(type, engine).forEach { (rel, content) -> touch(rel, content) }
+        if (scale == "full") skeletons(type, engine).forEach { (rel, content) -> touch(rel, content) }
 
         touch(
             "README.md",
@@ -476,6 +478,7 @@ class ToolRegistry(
         val tip = buildString {
             if (existed) append("\n\n项目已存在：只补齐缺失文件，没覆盖你已有的内容。")
             if (skillText.isNotBlank()) append("\n已匹配技能 $skillName。")
+            append("\n骨架规模：$scale")
         }
         val head = when {
             existed && created.isEmpty() -> "项目 $name 已经完整，无需新建：${dir.absolutePath}"
@@ -1177,7 +1180,8 @@ class Storage(private val root: File) {
                 JSONObject()
                     .put("name", prop("string", "项目名"))
                     .put("type", prop("string", "类型：game | writing | app"))
-                    .put("engine", prop("string", "引擎/框架，例如 Godot / Unity / 纯 HTML5 / Markdown")),
+                    .put("engine", prop("string", "引擎/框架，例如 Godot / Unity / 纯 HTML5 / Markdown"))
+                    .put("scale", prop("string", "骨架规模：minimal | standard | full（默认 full）")),
                 listOf("name")
             )
         )
