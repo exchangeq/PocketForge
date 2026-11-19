@@ -43,7 +43,7 @@ fun SettingsScreen(
     fingerprint: String,
     encryptedAtRest: Boolean,
     hasStorage: Boolean,
-    onSave: (AppConfig) -> Unit,
+    onSave: (AppConfig) -> Boolean,
     onTest: suspend () -> String,
     onInstallSkills: () -> String,
     onClear: () -> Unit,
@@ -162,7 +162,7 @@ fun SettingsScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = {
-                onSave(
+                val saved = onSave(
                     config.copy(
                         baseUrl = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" },
                         apiKey = apiKey.trim(),
@@ -176,7 +176,7 @@ fun SettingsScreen(
                         skillsGate = skillsGate,
                     )
                 )
-                savedTip = "已加密保存"
+                savedTip = if (saved) "已加密保存" else "保存失败：设备密钥不可用"
             }) {
                 Text("保存配置")
             }
