@@ -1,5 +1,43 @@
 # 更新日志
 
+## v1.3.0（骨架扩容 + 45 技能 + 文档锁 + 推理强度）
+
+**修掉「新建项目没反应」的真正原因**
+
+- 根因：`project_new` 在写类工具闸门里，新装/重开后没读过技能，工具层直接返回 `gate=skills_not_loaded`，UI 只把错误塞进一行小字，看起来就是「点了没反应」。
+- 修复：用户手动点「新建」视为已确认意图，引擎补记 `SKILLS.md` + 对应专项技能再派发；失败时弹窗用红字给出真实原因，成功则弹「骨架已生成」清单。
+
+**项目骨架扩到「能直接接着写」**
+
+- 游戏：新增 `src/engine/{GameLoop,World,Entity,Scene,Input,Renderer,Assets}.kt`、`src/system/{Config,SaveSystem,Logger}.kt`、`src/Main.kt`、`src/game/Scene.kt`、`docs/{tech,data-model}.md`。
+- 写作：新增 `chapters/000-模板.md`、`world.md`、`cast/cast.md`、`continuity.md`（伏笔账本）、`style-guide.md`、`docs/publishing.md`、`plan/todo.md`；`world.md` 与 `style-guide.md` **创建后自动上锁**。
+- 应用：新增 `src/main/{App,Router}.kt`、`src/system/Storage.kt`、`docs/architecture.md`。
+
+**长文本不再被卡脖子**
+
+- `max_tokens` 默认 8192，`max_steps` 40，单次写入上限提到 4MB。
+- 系统提示强制「分卷写」：每卷 ≤300 行，`fs_write(append=true)` 追加，写完读回尾部校验；禁止一次硬塞整本书。
+
+**文档锁（定稿保护）**
+
+- 新工具：`doc_lock`（整篇软锁 / 指定章节锁 / 硬锁）、`doc_unlock`、`doc_locks`。
+- 锁记录在 `<workspace>/.pocketforge/locks.json`；写入被锁文件时工具层直接拒绝并给出可读原因；章节锁只比对被登记章节，其余章节可正常续写。
+- 项目页新增「锁定文档」区块，可一键解锁；写作项目创建时自动锁 `world.md`、`style-guide.md`。
+
+**技能从 10 份扩到 45 份**
+
+- 游戏线：engine-dev / system-dev / level-design / balance-design / save-load / pixel-art / asset-pipeline / audio / image-pipeline
+- 写作线：longform-writing / narrative-structure / worldbuilding / script-dialogue / poetry-lyrics / editing / copywriting
+- 工程线：kotlin-style / ui-design / data-model / api-protocol / security / testing / debugging / performance / refactor / project-structure / roadmap-planning / qa-checklist / release-checklist / android-build / cli-build-termux / git-workflow / accessibility-i18n / data-viz / docs-lock
+- `skills-index.json` 更新到 version 3（45 条，含 sha256），远程注入可直接拉全量。
+
+**推理强度可自选**
+
+- 设置页五档：关 / 低 / 中 / 高 / 极高，透传 `reasoning_effort`（极高映射 high）；系统提示按档位调整「先列方案、自检次数」。
+
+**包体**：release 12MB / debug 15MB，签名指纹沿用 `a5d8a11…f4b40`，可覆盖升级。
+
+
 ## v1.2.0（界面重做 + 技能注入 + Termux 桥接）
 
 **界面全部重做**
