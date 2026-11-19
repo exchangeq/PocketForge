@@ -1,12 +1,25 @@
 {
-  "version": 2,
+  "version": 3,
   "updated": "2026-11-19",
+  "count": 45,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "badb179b7ee2eb4489acee47ea25c659bed2282ab1c137e8b9bf51c30f7d68ac",
-      "bytes": 3106
+      "sha256": "2ee0a9343dfcc1e81468a8b5bba19d6fef348e2584dbd4e219161cd3cde79ec2",
+      "bytes": 7755
+    },
+    {
+      "name": "accessibility-i18n.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/accessibility-i18n.md",
+      "sha256": "ff8df5ad6b27a49c260af5184555282409aaa549f9c016f6ccd0a39ef1ceefd8",
+      "bytes": 703
+    },
+    {
+      "name": "android-build.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/android-build.md",
+      "sha256": "533ec2e837b2f837d7007e4cbb92a3b8789cb2061876092cc79d54b33b7f2f64",
+      "bytes": 952
     },
     {
       "name": "answer-style.md",
@@ -15,10 +28,34 @@
       "bytes": 1754
     },
     {
+      "name": "api-protocol.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/api-protocol.md",
+      "sha256": "870cc66f5c4323aac18e43a660af80c08d09b8b5b85229f2c8e578ebfd03bd9f",
+      "bytes": 981
+    },
+    {
       "name": "app-dev.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/app-dev.md",
       "sha256": "d3786116b973d1dc618bdd4e5ce189fc2f2ffc9e75fb0ecfd745400695feb269",
       "bytes": 2563
+    },
+    {
+      "name": "asset-pipeline.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/asset-pipeline.md",
+      "sha256": "dbda380ee1836c41f5a831cdd8cfbd093c6025afc6cd65801c5eebde1e4ab477",
+      "bytes": 703
+    },
+    {
+      "name": "audio.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/audio.md",
+      "sha256": "a5c14df633f8c97a1c0d80170b4347a594075133d42e264c5fb850cd24df096b",
+      "bytes": 673
+    },
+    {
+      "name": "balance-design.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/balance-design.md",
+      "sha256": "5b782102152f315a870e21e1f38635159b7240b7d1b9bf0b946f4066c9e672ab",
+      "bytes": 774
     },
     {
       "name": "boundaries.md",
@@ -33,10 +70,88 @@
       "bytes": 2039
     },
     {
+      "name": "cli-build-termux.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/cli-build-termux.md",
+      "sha256": "adcb134a30a68d6fa488d33d71f395541810d79600addc2d092704ae574be27a",
+      "bytes": 713
+    },
+    {
+      "name": "copywriting.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/copywriting.md",
+      "sha256": "11ea4dc2e97f2e89f1816e2e7eeec409ceb1b766c87d67ecffcb42d2ecde6d89",
+      "bytes": 667
+    },
+    {
+      "name": "data-model.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/data-model.md",
+      "sha256": "c92ab205e11f99e34972603e09f9c074151fbe6366fe1115f3f35e7738d13c07",
+      "bytes": 770
+    },
+    {
+      "name": "data-viz.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/data-viz.md",
+      "sha256": "292b678a78dd4c84e45bd463025432a160baad8c2774b5ee111aef6874ca4154",
+      "bytes": 602
+    },
+    {
+      "name": "debugging.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/debugging.md",
+      "sha256": "ba46be2a7cb6c925f1eb76cb4da65c22692d901126165e0d19cfed7d4dd7cd02",
+      "bytes": 834
+    },
+    {
+      "name": "docs-lock.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/docs-lock.md",
+      "sha256": "ecf8169a83c03118925c72eaa3f4afb7815e34946ba736f0f78bda6707ae5aa2",
+      "bytes": 1021
+    },
+    {
+      "name": "editing.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/editing.md",
+      "sha256": "6b13834e82320fb109cae8ac2344502cacad3c63248f5ba8c5e7ba1b0f78708c",
+      "bytes": 874
+    },
+    {
+      "name": "engine-dev.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/engine-dev.md",
+      "sha256": "dde7d2a4aaa8fcbb7ae3fb012e325dc765062f0dad26f65259d8427340c288cb",
+      "bytes": 1369
+    },
+    {
       "name": "game-dev.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/game-dev.md",
       "sha256": "833ad89bd5c9ddc4d224a2e6825294d1b06ad3603f9fc882f83202cfa83399ef",
       "bytes": 3736
+    },
+    {
+      "name": "git-workflow.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/git-workflow.md",
+      "sha256": "27ee6ee572422508491e349abd27478ef091d9348a0015403e0271245140f255",
+      "bytes": 711
+    },
+    {
+      "name": "image-pipeline.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/image-pipeline.md",
+      "sha256": "ae5a30fca5df0fdc01c1ea82b2065472aa58c41f2c6c9f94d12dd5da3447dfa2",
+      "bytes": 585
+    },
+    {
+      "name": "kotlin-style.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/kotlin-style.md",
+      "sha256": "ffe943027749328ed980003d26b9416bcd982e5cda099b0f7833bd9addd055f0",
+      "bytes": 805
+    },
+    {
+      "name": "level-design.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/level-design.md",
+      "sha256": "dad33010008bd3fc6fee24161456bedbf1b31a7dbad9a9e554d18f90b9010d9c",
+      "bytes": 682
+    },
+    {
+      "name": "longform-writing.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/longform-writing.md",
+      "sha256": "26c4434d24b18e4e4a60f5dcbd4068a468cccbee022bce73c2fc3345dd7df37a",
+      "bytes": 1008
     },
     {
       "name": "markdown-style.md",
@@ -45,16 +160,112 @@
       "bytes": 1701
     },
     {
+      "name": "narrative-structure.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/narrative-structure.md",
+      "sha256": "f5a43b9ae603773017a6ac1010b30c38de2008414337964b5b75f854f9479d4a",
+      "bytes": 739
+    },
+    {
+      "name": "performance.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/performance.md",
+      "sha256": "9b21d9f8c257598b50f7c79d8b520f735fecfb4d21c2b6f9a256d24c178e4fc5",
+      "bytes": 768
+    },
+    {
+      "name": "pixel-art.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/pixel-art.md",
+      "sha256": "6f5bf39bd55f2575d7f355432f51b01eee2e1448bbf16a771aa6ce93ac0e88a1",
+      "bytes": 657
+    },
+    {
+      "name": "poetry-lyrics.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/poetry-lyrics.md",
+      "sha256": "1bf2c1516f81d4c10c1203ad9b147a946485c7b0443f341142a36e8cecde451b",
+      "bytes": 664
+    },
+    {
+      "name": "project-structure.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/project-structure.md",
+      "sha256": "3ec1b51ba67471a0cbad7772e030bcfc48665e2fcb266c2b84f27fa7ae844837",
+      "bytes": 959
+    },
+    {
+      "name": "qa-checklist.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/qa-checklist.md",
+      "sha256": "392c47923a8c110de57eb13b92ed0c7ce50524f5ceb87f1f4e9fb65c21e20464",
+      "bytes": 583
+    },
+    {
+      "name": "refactor.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/refactor.md",
+      "sha256": "40cf2cff89727fb65f2c922c136b2117d029a025bfc230280c332f4680c517d5",
+      "bytes": 680
+    },
+    {
+      "name": "release-checklist.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/release-checklist.md",
+      "sha256": "e2b7a165d7a654193cbc7381257521f83799bb81619cc039c623e9c8b10dba79",
+      "bytes": 607
+    },
+    {
+      "name": "roadmap-planning.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/roadmap-planning.md",
+      "sha256": "a52bde171f405df147d90bb92482aa084bd06cb620621f5af1e9ad9b27b00b3a",
+      "bytes": 686
+    },
+    {
       "name": "runtime-config.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/runtime-config.md",
       "sha256": "92a7770b234057421f72d79f244deb5ba4e20bbd45997f45e4ff66100f826394",
       "bytes": 4307
     },
     {
+      "name": "save-load.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/save-load.md",
+      "sha256": "78d91fc354956365d0193f602c6e9283b7a4975e00ca99a11c7592d7236b5ef5",
+      "bytes": 608
+    },
+    {
+      "name": "script-dialogue.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/script-dialogue.md",
+      "sha256": "fc946dbecd81812f8bfdc31954ab9541c16b3bb4a78803d9b9022f740a59f341",
+      "bytes": 786
+    },
+    {
+      "name": "security.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/security.md",
+      "sha256": "371630585e748788849250e24ed33860b7267a8b1262afe9d254bdb1b8191823",
+      "bytes": 814
+    },
+    {
+      "name": "system-dev.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/system-dev.md",
+      "sha256": "6dd9ad9ed08e05b2fbd796462ee42a6d00b806adab1db5ee11a22bfdbd0b341f",
+      "bytes": 1243
+    },
+    {
       "name": "termux.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/termux.md",
       "sha256": "a4ca0586409645edaf95da9dcf2a75205456ceeeabbc1f60c216d3168d9928d5",
       "bytes": 3340
+    },
+    {
+      "name": "testing.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/testing.md",
+      "sha256": "f63a50c70e01d82b1096a03c9b3e3c628e536d1eb71c963d275ace9965c84163",
+      "bytes": 771
+    },
+    {
+      "name": "ui-design.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/ui-design.md",
+      "sha256": "4ef7c1b7776d6a9ea841313896a970538a63a9080466bb4037197edab15c69a6",
+      "bytes": 942
+    },
+    {
+      "name": "worldbuilding.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/worldbuilding.md",
+      "sha256": "59594c861a9335082b359cf8aedebd96e14068103c64a0e29820cf1cc8d7ef8d",
+      "bytes": 731
     },
     {
       "name": "writing.md",
