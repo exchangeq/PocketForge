@@ -12,8 +12,8 @@ android {
         applicationId = "com.pocketforge.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -63,5 +63,6 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.github.mwiede:jsch:0.2.20")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
