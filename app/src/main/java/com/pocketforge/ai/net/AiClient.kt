@@ -51,7 +51,8 @@ class AiClient {
             }
 
             val conn = URL(config.endpoint()).openConnection() as HttpURLConnection
-            connection = conn            conn.requestMethod = "POST"
+            connection = conn
+            conn.requestMethod = "POST"
             conn.connectTimeout = 20_000
             conn.readTimeout = 180_000
             conn.doOutput = true
