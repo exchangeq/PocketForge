@@ -140,7 +140,8 @@ fun AppRoot() {
                         result
                     },
                     onRemoteInstall = { url, force ->
-                        val result = engine.installRemoteSkills(url, config.skillRepoToken, force)
+                        val target = url.ifBlank { config.skillRepoUrl }
+                        val result = engine.installRemoteSkills(target, config.skillRepoToken, force)
                         skills = engine.skillStatus()
                         forced = engine.forceInjected()
                         result
