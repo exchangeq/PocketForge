@@ -196,4 +196,5 @@ data class UiState(
     val skillsLoaded: Boolean = false,
     val plan: List<PlanItem> = emptyList(),
     val lastError: String? = null,
+    val sessionTitle: String = "主对话",
 )
