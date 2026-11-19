@@ -27,6 +27,15 @@ sealed class AiEvent {
  */
 class AiClient {
 
+    @Volatile
+    private var active: HttpURLConnection? = null
+
+    /** 用户点“停止”时立刻掐断正在阻塞的读取 */
+    fun cancel() {
+        runCatching { active?.disconnect() }
+        active = null
+    }
+
     fun chat(
         config: AppConfig,
         messages: List<ChatMessage>,
@@ -52,9 +61,10 @@ class AiClient {
 
             val conn = URL(config.endpoint()).openConnection() as HttpURLConnection
             connection = conn
+            active = conn
             conn.requestMethod = "POST"
             conn.connectTimeout = 20_000
-            conn.readTimeout = 180_000
+            conn.readTimeout = 120_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             conn.setRequestProperty("Accept", if (config.stream) "text/event-stream" else "application/json")
@@ -103,6 +113,7 @@ class AiClient {
         } catch (t: Throwable) {
             onEvent(AiEvent.Failed(t.message ?: t.javaClass.simpleName))
         } finally {
+            if (active === connection) active = null
             runCatching { connection?.disconnect() }
         }
     }
