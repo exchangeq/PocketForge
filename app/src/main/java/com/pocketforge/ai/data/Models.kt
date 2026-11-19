@@ -189,6 +189,9 @@ data class MsgUi(
 
 data class PlanItem(val text: String, val done: Boolean = false)
 
+/** 会话全文搜索命中 */
+data class SessionHit(val key: String, val title: String, val snippet: String)
+
 data class UiState(
     val messages: List<MsgUi> = emptyList(),
     val busy: Boolean = false,
