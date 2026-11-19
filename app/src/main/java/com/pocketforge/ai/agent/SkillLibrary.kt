@@ -25,14 +25,49 @@ class SkillLibrary(private val context: Context) {
         val ENTRIES: List<Pair<String, String>> = listOf(
             "SKILLS.md" to "总索引：开工纪律与技能路由",
             "boundaries.md" to "越界防护：可写范围与禁止事项",
-            "game-dev.md" to "游戏项目：目录结构、引擎与产物",
-            "writing.md" to "写作项目：大纲、章节、去 AI 味",
-            "app-dev.md" to "应用/网页项目：工程结构与验收",
             "runtime-config.md" to "加密配置与数据流协议说明",
             "answer-style.md" to "回答风格：结论、分段、总结、文件清单",
-            "markdown-style.md" to "Markdown 排版规范：标题层级、表格、代码块",
-            "character-card.md" to "角色卡：人设、口吻、禁写区（写作/剧本用）",
-            "termux.md" to "Termux 桥接：sshd、密钥、SSH 加密套件与命令红线",
+            "markdown-style.md" to "Markdown 排版规范",
+            "docs-lock.md" to "文档锁定规程：soft / 章节 / hard",
+            "project-structure.md" to "项目目录规范",
+            "roadmap-planning.md" to "拆解与里程碑规划",
+            "qa-checklist.md" to "通用验收清单",
+            "game-dev.md" to "游戏项目：目录、引擎与产物",
+            "engine-dev.md" to "引擎层：主循环、场景、渲染抽象",
+            "system-dev.md" to "系统层：配置、日志、存储、权限",
+            "level-design.md" to "关卡设计与难度曲线",
+            "balance-design.md" to "数值策划与曲线",
+            "save-load.md" to "存档系统：原子写与迁移",
+            "pixel-art.md" to "像素风规范",
+            "asset-pipeline.md" to "资源管线与命名",
+            "audio.md" to "音频：BGM/SFX/语音",
+            "image-pipeline.md" to "图片管线与压缩",
+            "writing.md" to "写作项目：大纲、章节、去 AI 味",
+            "longform-writing.md" to "长篇连载：章节流程与连续性账本",
+            "narrative-structure.md" to "叙事结构：三幕与网文节奏",
+            "worldbuilding.md" to "世界观：硬规则与代价",
+            "character-card.md" to "角色卡与人设口吻",
+            "script-dialogue.md" to "剧本格式与对白",
+            "poetry-lyrics.md" to "诗歌与歌词韵律",
+            "editing.md" to "改稿与去 AI 味",
+            "copywriting.md" to "文案：钩子与卖点",
+            "app-dev.md" to "应用/网页项目工程结构",
+            "kotlin-style.md" to "Kotlin 代码风格",
+            "ui-design.md" to "界面设计：配色、字号、间距",
+            "data-model.md" to "数据建模与存档结构",
+            "api-protocol.md" to "OpenAI 兼容接口与工具调用",
+            "security.md" to "安全：密钥、路径、注入",
+            "testing.md" to "测试分层与必测清单",
+            "debugging.md" to "排障顺序与常见坑",
+            "performance.md" to "性能：预算、测量、手段",
+            "refactor.md" to "重构：护栏与小步",
+            "release-checklist.md" to "发版检查",
+            "android-build.md" to "Android 构建与签名",
+            "cli-build-termux.md" to "Termux 内构建",
+            "termux.md" to "Termux 桥接与 SSH 加密",
+            "git-workflow.md" to "版本管理与提交规范",
+            "accessibility-i18n.md" to "无障碍与多语言",
+            "data-viz.md" to "数据可视化选型",
         )
 
         const val FORCE_MARK = ".force"
@@ -99,6 +134,9 @@ class SkillLibrary(private val context: Context) {
 
     fun skillFor(projectType: String): String = when (projectType.lowercase()) {
         "game", "游戏" -> "game-dev.md"
+        "engine", "引擎" -> "engine-dev.md"
+        "system", "系统" -> "system-dev.md"
+        "doc", "docs", "文档" -> "docs-lock.md"
         "writing", "write", "book", "写作" -> "writing.md"
         "app", "web", "应用", "网页" -> "app-dev.md"
         "character", "角色" -> "character-card.md"
