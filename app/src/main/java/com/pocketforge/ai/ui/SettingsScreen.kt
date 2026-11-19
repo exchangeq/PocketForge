@@ -73,6 +73,7 @@ fun SettingsScreen(
     var model by remember(config) { mutableStateOf(config.model) }
     var temperature by remember(config) { mutableStateOf(config.temperature.toString()) }
     var maxTokens by remember(config) { mutableStateOf(config.maxTokens.toString()) }
+    var effort by remember(config) { mutableStateOf(config.reasoningEffort) }
     var workspaceRoot by remember(config) { mutableStateOf(config.workspaceRoot) }
     var cipherKey by remember(config) { mutableStateOf(config.streamCipherKey) }
     var systemExtra by remember(config) { mutableStateOf(config.systemExtra) }
@@ -102,7 +103,8 @@ fun SettingsScreen(
         apiKey = apiKey.trim(),
         model = model.trim().ifEmpty { "gpt-4o-mini" },
         temperature = temperature.trim().toDoubleOrNull() ?: 0.4,
-        maxTokens = maxTokens.trim().toIntOrNull() ?: 4096,
+        maxTokens = maxTokens.trim().toIntOrNull() ?: 8192,
+        reasoningEffort = effort,
         workspaceRoot = workspaceRoot.trim(),
         streamCipherKey = cipherKey.trim(),
         systemExtra = systemExtra,
@@ -179,6 +181,24 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(1.6f),
             )
+        }
+        Column(Modifier.padding(top = 4.dp)) {
+            Text(
+                "推理强度",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                "高: 先列方案再动手、写完自检两次；关: 直接给结论。透传 reasoning_effort，上游不支持会自动忽略。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 15.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("off" to "关", "low" to "低", "medium" to "中", "high" to "高", "max" to "极高")
+                    .forEach { (key, label) -> AuthChip(label, effort == key) { effort = key } }
+            }
         }
         SwitchRow("SSE 流式输出", "逐字显示模型回答，长回复体感更好", stream) { stream = it }
 
@@ -448,6 +468,7 @@ fun SettingsScreen(
                 InfoLine("文件访问", if (hasStorage) "已授权" else "仅应用私有目录")
                 InfoLine("配置加密", if (encryptedAtRest) "AES-256-GCM（Keystore）" else "尚未写入")
                 InfoLine("密钥指纹", fingerprint)
+                InfoLine("推理强度", when (effort) { "off" -> "关"; "low" -> "低"; "high" -> "高"; "max" -> "极高"; else -> "中" })
                 InfoLine("技能源", skillRepoUrl.ifBlank { "内置" })
                 InfoLine("Termux", "${tUser.ifBlank { "未配置" }}@${tHost.ifBlank { "127.0.0.1" }}:${tPort.ifBlank { "8022" }}")
             }
