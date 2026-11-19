@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     companion object {
-        private const val ROUND_TIMEOUT_MS = 150_000L
+        private const val ROUND_TIMEOUT_MS = 300_000L
     }
 
     private val appContext = context.applicationContext
@@ -112,6 +112,12 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     fun send(text: String) {
         val input = text.trim()
         if (input.isEmpty() || _ui.value.busy) return
+        // 一旦开始长任务，就确保前台服务在跑（用户开过后台常驻时）
+        runCatching {
+            if (com.pocketforge.ai.service.KeepAliveService.isEnabled(appContext)) {
+                com.pocketforge.ai.service.KeepAliveService.start(appContext)
+            }
+        }
         history.add(ChatMessage(role = "user", content = input))
         _ui.update {
             it.copy(messages = it.messages + MsgUi(newId(), "user", input), busy = true, lastError = null)
@@ -840,6 +846,13 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             }
 
             bumpUsage(buildMessages(config).sumOf { it.content?.length ?: 0 }, content.length)
+
+            if (toolCalls.isEmpty() && content.isBlank() && attempt <= 2 && failure == null) {
+                // 上游偶发空响应：短暂等待后再请求一次，别直接把错误甩给用户
+                updateText(messageId, "上游返回空内容，${3 * attempt} 秒后重试…")
+                delay(3000L * attempt)
+                continue
+            }
 
             if (toolCalls.isEmpty() && content.isBlank()) {
                 val friendly = when {
