@@ -1,7 +1,10 @@
 package com.pocketforge.ai.agent
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.pocketforge.ai.core.Sandbox
 import com.pocketforge.ai.data.AppConfig
 import com.pocketforge.ai.data.ChatMessage
@@ -43,6 +46,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var job: Job? = null
+    private var lastTextEmit = 0L
     private val history = mutableListOf<ChatMessage>()
     private var indexRead = false
     private val readSkills = linkedSetOf<String>()
@@ -78,6 +82,30 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         _ui.update {
             it.copy(messages = it.messages + MsgUi(newId(), "user", input), busy = true, lastError = null)
         }
+
+        val config = configRepo.config.value
+        if (config.apiKey.isBlank()) {
+            val reply = buildString {
+                appendLine("还没配置 API Key，我暂时没法联网回答。")
+                appendLine()
+                appendLine("去底部「设置」：")
+                appendLine("1. Base URL 填到 /v1（例：https://api.openai.com/v1）")
+                appendLine("2. 填 API Key，点「保存配置」")
+                appendLine("3. 点「测试连接」，看到「连接成功」就回来发这句")
+                append("4. 想读写手机目录的话，顺手把「所有文件访问」授权了")
+            }
+            history.add(ChatMessage(role = "assistant", content = reply))
+            _ui.update {
+                it.copy(
+                    messages = it.messages + MsgUi(newId(), "assistant", reply),
+                    busy = false,
+                    lastError = "未配置 API Key",
+                )
+            }
+            sessionStore.save(history)
+            return
+        }
+
         job = scope.launch {
             try {
                 runLoop()
@@ -103,6 +131,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     fun stop() {
+        client.cancel()
         job?.cancel()
     }
 
@@ -126,6 +155,37 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     fun saveConfig(config: AppConfig): Boolean = configRepo.save(config)
 
     fun currentConfig(): AppConfig = configRepo.config.value
+
+    /** 权限与运行环境体检（给设置页展示，逐项列出可读/可写状态） */
+    fun permissionReport(): String = buildString {
+        val sdk = Build.VERSION.SDK_INT
+        appendLine("系统：Android $sdk（${Build.MANUFACTURER} ${Build.MODEL}）")
+        appendLine("所有文件访问：${if (sandbox.hasAllFilesAccess()) "已授权 ✓" else "未授权 ✗（只能写应用私有目录）"}")
+        val readGranted = ContextCompat.checkSelfPermission(
+            appContext, android.Manifest.permission.READ_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+        appendLine("读存储权限：${if (readGranted) "已授权 ✓" else "未授权 ✗"}")
+        appendLine("网络：INTERNET 已声明（无需运行时授权）")
+        appendLine("工作区：${runCatching { sandbox.workspace().absolutePath }.getOrElse { "不可用 ✗" }}")
+        val root = File("/storage/emulated/0")
+        appendLine("手机根目录：${if (root.canRead()) "可读 ✓" else "不可读 ✗"}")
+    }
+
+    /** 真写一次再删掉，用来验证工作区是否真的可写 */
+    fun storageSelfCheck(): String {
+        val ws = runCatching { sandbox.workspace() }.getOrElse {
+            return "写入自检失败：工作区不可用（${it.message}）"
+        }
+        return try {
+            val probe = File(ws, ".pocketforge-write-test")
+            probe.writeText("ok-${System.currentTimeMillis()}")
+            val size = probe.length()
+            probe.delete()
+            "写入自检通过 ✓ ${ws.absolutePath}（探测 ${size}B，已清理）"
+        } catch (t: Throwable) {
+            "写入自检失败 ✗ ${ws.absolutePath}：${t.message}"
+        }
+    }
 
     fun testConnection(): String = client.ping(configRepo.config.value)
 
@@ -278,6 +338,10 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     // ---------------- UI 更新 ----------------
 
     private fun updateText(messageId: String, text: String) {
+        // 流式输出按 ~55ms 节流，避免每 token 都触发重组导致卡顿
+        val now = System.currentTimeMillis()
+        if (now - lastTextEmit < 55) return
+        lastTextEmit = now
         _ui.update { state ->
             state.copy(messages = state.messages.map { msg ->
                 if (msg.id == messageId) msg.copy(text = text) else msg
