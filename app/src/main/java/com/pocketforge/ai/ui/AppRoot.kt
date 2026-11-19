@@ -78,12 +78,23 @@ fun AppRoot() {
     var updateTag by remember { mutableStateOf<String?>(null) }
     var showSessions by remember { mutableStateOf(false) }
     var sessionList by remember { mutableStateOf<List<Triple<String, String, Int>>>(emptyList()) }
+    var updateDismissed by remember { mutableStateOf(false) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         hasStorage = engine.hasAllFilesAccess()
         projects = engine.projectNames()
+    }
+
+    val docPickLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            engine.onIo {
+                notice = engine.importDocuments(uris)
+            }
+        }
     }
 
     val skillPickLauncher = rememberLauncherForActivityResult(
@@ -124,6 +135,22 @@ fun AppRoot() {
             onOpenSettings = { tab = 2 },
             onUpdateClick = { tab = 2 },
         )
+
+        if (updateTag != null && !updateDismissed) {
+            AlertDialog(
+                onDismissRequest = { updateDismissed = true },
+                title = { Text("发现新版本 " + updateTag) },
+                text = {
+                    Text("当前 ${engine.currentVersion()}，可升级到 ${updateTag}。\n\n更新包会先校验签名，不符会拒绝安装，不会装进别的应用。")
+                },
+                confirmButton = {
+                    TextButton(onClick = { updateDismissed = true; tab = 2 }) { Text("去更新") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { updateDismissed = true }) { Text("稍后") }
+                },
+            )
+        }
 
         // 关键：内容区必须用 weight，否则 fillMaxSize 会吃掉底部导航的高度
         Box(
@@ -184,6 +211,14 @@ fun AppRoot() {
                         sessionList = engine.sessions()
                         showSessions = true
                     },
+                    onRewind = { engine.rewindLastTurn() },
+                    onEditMessage = { id, text -> engine.editMessage(id, text) },
+                    onToggleNoRecall = {
+                        val msg = engine.setNoRecall(!engine.isNoRecall())
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        msg
+                    },
+                    onCopyTranscript = { engine.copyTranscript() },
                     onExport = {
                         engine.onIo {
                             val msg = engine.exportSession()
@@ -211,6 +246,11 @@ fun AppRoot() {
                         val r = engine.createProject(name, type, engineName, scale)
                         val session = engine.ensureProjectSession(name)
                         r.summary + "\n" + session
+                    },
+                    onImportDocs = { docPickLauncher.launch(arrayOf("text/*", "application/markdown", "application/octet-stream")) },
+                    onOpenChat = { name ->
+                        tab = 0
+                        engine.enterProjectSessionByName(name)
                     },
                     onSkillClick = { engine.skillText(it) },
                     onSyncBundled = {
