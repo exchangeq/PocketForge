@@ -61,6 +61,10 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private var indexRead = false
     private val readSkills = linkedSetOf<String>()
 
+    private val noRecallFile = File(appContext.filesDir, "no-recall.json")
+
+    private var noRecall: Boolean = false
+
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
@@ -191,6 +195,53 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     // ---------------- 多会话（一个项目一个对话页） ----------------
 
+    // ---------------- 防撤回 / 消息编辑 ----------------
+
+    private fun noRecallMap(): org.json.JSONObject = runCatching {
+        if (noRecallFile.exists()) org.json.JSONObject(noRecallFile.readText()) else org.json.JSONObject()
+    }.getOrDefault(org.json.JSONObject())
+
+    private fun persistNoRecall(key: String, on: Boolean) {
+        runCatching {
+            val obj = noRecallMap()
+            obj.put(key, on)
+            noRecallFile.writeText(obj.toString())
+        }
+    }
+
+    fun isNoRecall(): Boolean = noRecallMap().optBoolean(sessionKey, false)
+
+    /** 开启后，本会话已写完的内容不可编辑、不可撤回 */
+    fun setNoRecall(on: Boolean): String {
+        noRecall = on
+        persistNoRecall(sessionKey, on)
+        return if (on) "已开启防撤回：本会话已写内容锁定，无法修改" else "已关闭防撤回"
+    }
+
+    /** 复制整段会话为纯文本 */
+    fun copyTranscript(): String = _ui.value.messages.joinToString("\n\n") { m ->
+        val role = if (m.role == "user") "我" else "助手"
+        "【$role】\n" + m.text + m.steps.joinToString("") { st -> "\n· " + st.title }
+    }
+
+    /** 编辑一条消息；防撤回开启时直接拒绝 */
+    fun editMessage(id: String, newText: String): String {
+        if (isNoRecall()) return "防撤回已开启：本会话已写内容不可修改（可在设置里关闭后再改）"
+        val target = _ui.value.messages.firstOrNull { it.id == id } ?: return "消息不存在"
+        val old = target.text
+        _ui.update { st -> st.copy(messages = st.messages.map { if (it.id == id) it.copy(text = newText, error = null) else it }) }
+        // 同步历史里的对应消息，保证后续上下文一致
+        if (target.role == "user" || target.role == "assistant") {
+            val idx = history.indexOfLast { it.role == target.role && it.content == old }
+            if (idx >= 0) {
+                val calls = history[idx].toolCalls
+                history[idx] = ChatMessage(role = target.role, content = newText, toolCalls = calls, toolCallId = history[idx].toolCallId)
+            }
+        }
+        sessionStore.save(sessionKey, history)
+        return "已修改"
+    }
+
     fun currentSessionKey(): String = sessionKey
 
     fun currentSessionTitle(): String = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
@@ -230,6 +281,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         readSkills.clear()
         indexRead = false
         sessionStore.setTitle(key, title)
+        persistNoRecall(key, false)
+        noRecall = false
         _ui.value = UiState(projectName = title, sessionTitle = title)
         return key
     }
@@ -560,7 +613,66 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             .put("engine", engine)
             .put("scale", scale)
             .toString()
-        return tools.dispatch("project_new", args)
+        val result = tools.dispatch("project_new", args)
+        if (result.ok) openProjectChat(name)
+        return result
+    }
+
+    /** 一个项目一个对话页：进入或新建 project-<slug> 会话 */
+    fun openProjectChat(name: String): String {
+        val key = "project-" + slugOf(name)
+        if (!sessionStore.exists(key)) {
+            sessionStore.setTitle(key, name)
+            if (key == sessionKey) return key
+            sessionStore.save(sessionKey, history)
+            sessionKey = key
+            history.clear()
+            readSkills.clear()
+            indexRead = false
+            _ui.value = UiState(projectName = name, sessionTitle = name)
+            return key
+        }
+        switchSession(key)
+        return key
+    }
+
+    /** 撤回上一轮用户消息：把它从历史里摘掉并返回文本，供输入框修改后重发 */
+    fun rewindLastTurn(): String {
+        val idx = history.indexOfLast { it.role == "user" }
+        if (idx < 0) return ""
+        val text = history[idx].content.orEmpty()
+        while (history.size > idx) history.removeAt(history.size - 1)
+        val visible = history
+            .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
+            .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
+        _ui.update { it.copy(messages = visible, plan = it.plan, busy = false) }
+        sessionStore.save(sessionKey, history)
+        return text
+    }
+
+    /** 导入用户文档到当前工作区 docs/inbox/，供 AI 读取 */
+    fun importDocuments(uris: List<Uri>): String {
+        if (uris.isEmpty()) return "没有选中文件"
+        val ws = runCatching { sandbox.workspace() }.getOrNull() ?: return "工作区不可用"
+        val dir = java.io.File(ws, "docs/inbox").apply { mkdirs() }
+        val ok = mutableListOf<String>()
+        val bad = mutableListOf<String>()
+        uris.forEach { uri ->
+            val name = displayName(uri) ?: ("doc-" + System.currentTimeMillis() + ".txt")
+            val text = runCatching {
+                appContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            when {
+                text == null -> bad.add("$name（读不出来）")
+                text.length > 4 * 1024 * 1024 -> bad.add("$name（超过 4MB）")
+                else -> { java.io.File(dir, name).writeText(text); ok.add(name) }
+            }
+        }
+        return buildString {
+            if (ok.isNotEmpty()) append("已导入 ${ok.size} 份文档到 docs/inbox：").append(ok.joinToString("、"))
+            if (bad.isNotEmpty()) append("\n未导入：").append(bad.joinToString("、"))
+            append("\n提示 AI：先读 docs/inbox 再动笔。")
+        }
     }
 
     // ---------------- 主循环 ----------------
@@ -689,6 +801,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         appendLine("2. 只允许写工作区；读取可以覆盖公共存储根目录，但绝不修改。")
         appendLine("3. 不要臆造文件、目录、命令或 API；不确定就先 fs_list / fs_read 确认。")
         appendLine("4. 开工前用 plan_set 汇报分步计划；一次只推进一个可验证的小步骤，写完后立刻自检。")
+        appendLine("5. 任何交付都按 quality-output.md 自检：不留 TODO / 省略号 / 空实现，不写填充句，命名与数值前后一致；交付先给结论，再给依据，最后给下一步。")
+        appendLine("6. 用户消息里出现 `【附件：文件名】` 或让你读工作区 docs/ 下的文件时，按 document-ingest.md 处理：先建事实清单，再动笔；不擅自改写用户原文里的数字与称谓。")
         appendLine("5. 删除一律用 fs_delete（默认进 .trash 回收站）。")
         appendLine("6. 回复用中文：先给结论，再列「改了哪些文件」，最后给「下一步」。不要输出 API Key 或任何密钥。")
         appendLine("7. 游戏项目只做纯前端/纯代码能跑通的方案（如 HTML5/Godot 工程文件/纯 Kotlin 逻辑），不要声称能在这里编译 APK。")
@@ -703,7 +817,9 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
         appendLine("13. 长文本没有上限，但单次工具调用有 4MB 上限：长文件按「分卷 append」写，每卷 ≤ 300 行，写完读回尾部校验，禁止一次硬塞。")
         appendLine("14. 文档锁：定稿的设定/章节可先 doc_lock（soft 默认，hard 全禁写）。写入被锁文件会被工具层拒绝，除非用户明确要求解锁。")
-        appendLine("15. 技能库很大（47 份），按需读，不要全读；读哪份由项目类型决定。")
+        appendLine("15. 技能库很大（49 份），按需读，不要全读；读哪份由项目类型决定。")
+        appendLine("18. 生成内容按 content-quality.md 自检：完整、具体、有据、去 AI 味；不许用占位符冒充成品。")
+        appendLine("19. 用户导入的文档在 docs/inbox/（项目页「导入文档」写入）：动笔前先 fs_list + fs_read，引用要标来源，缺页就问，不猜。")
         appendLine("16. 找文件用 fs_search（先文件名，再 content=true）；不要自己遍历猜测路径。")
         appendLine("17. 只有用户明确要求时才调 update_check / update_install；安装包必须是本应用签名，校验不通过就停。")
         if (config.allowShell) {
@@ -782,6 +898,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
             .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
         val title = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
+        noRecall = noRecallMap().optBoolean(sessionKey, false)
         _ui.update { it.copy(messages = visible, sessionTitle = title, projectName = title) }
     }
 
