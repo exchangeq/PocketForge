@@ -45,6 +45,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     private val appContext = context.applicationContext
+    private val updater = com.pocketforge.ai.update.UpdateManager(appContext) { configRepo.config.value }
     private val sandbox = Sandbox(appContext) { configRepo.config.value }
     private val skills = SkillLibrary(appContext)
     private val client = AiClient()
@@ -76,6 +77,23 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         onHostKeyLearned = { fingerprint ->
             runCatching { configRepo.save(configRepo.config.value.copy(termuxHostKey = fingerprint)) }
         },
+        updateCheck = {
+            val r = updater.check()
+            buildString {
+                appendLine(r.message)
+                val rel = r.release
+                if (rel != null) {
+                    appendLine("tag: ${rel.tag}")
+                    appendLine("apk: ${rel.apkSize / 1048576}MB")
+                    appendLine("页面: ${rel.htmlUrl}")
+                    if (rel.notes.isNotBlank()) {
+                        appendLine()
+                        appendLine(rel.notes.take(600))
+                    }
+                }
+            }.toString()
+        },
+        updateInstall = { updater.install(updater.download()) },
     )
 
     init {
@@ -280,6 +298,28 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         if (ok) "已解锁 $rel" else "这个文件本来就没上锁"
     }.getOrElse { "解锁失败：${it.message}" }
 
+    // ---------------- 远程更新 ----------------
+
+    fun currentVersion(): String = updater.currentVersion()
+
+    fun checkUpdate(): String {
+        val r = updater.check()
+        val rel = r.release
+        return buildString {
+            append(r.message)
+            if (rel != null) {
+                append("\napk：${rel.apkSize / 1048576}MB · ${rel.tag}\n${rel.htmlUrl}")
+                if (rel.notes.isNotBlank()) append("\n\n" + rel.notes.take(500))
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(onProgress: (Int, String) -> Unit): String = runCatching {
+        val file = updater.download { percent, text -> onProgress(percent, text) }
+        updater.verify(file)?.let { return@runCatching "校验未通过：$it" }
+        updater.install(file)
+    }.getOrElse { "更新失败：${it.message}" }
+
     fun termuxTest(): String {
         val outcome = com.pocketforge.ai.termux.SshClient.test(configRepo.config.value)
         if (outcome.hostKeyLearned && outcome.fingerprint.isNotBlank()) {
@@ -447,7 +487,9 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
         appendLine("13. 长文本没有上限，但单次工具调用有 4MB 上限：长文件按「分卷 append」写，每卷 ≤ 300 行，写完读回尾部校验，禁止一次硬塞。")
         appendLine("14. 文档锁：定稿的设定/章节可先 doc_lock（soft 默认，hard 全禁写）。写入被锁文件会被工具层拒绝，除非用户明确要求解锁。")
-        appendLine("15. 技能库很大（40+ 份），按需读，不要全读；读哪份由项目类型决定。")
+        appendLine("15. 技能库很大（47 份），按需读，不要全读；读哪份由项目类型决定。")
+        appendLine("16. 找文件用 fs_search（先文件名，再 content=true）；不要自己遍历猜测路径。")
+        appendLine("17. 只有用户明确要求时才调 update_check / update_install；安装包必须是本应用签名，校验不通过就停。")
         if (config.allowShell) {
             appendLine("11. Termux 可用：termux_exec 能跑 shell（只允许在 Termux 自己的目录里操作，破坏性命令会被拦截）。需要环境信息时先用 termux_status 或 pkg list-installed 之类只读命令。")
         } else {
