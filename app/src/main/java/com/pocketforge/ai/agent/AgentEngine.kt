@@ -209,6 +209,91 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
     }
 
+    // ---------------- 用量统计 ----------------
+
+    private val usagePrefs get() = appContext.getSharedPreferences("pf-usage", Context.MODE_PRIVATE)
+
+    private fun bumpUsage(promptChars: Int, outChars: Int) {
+        usagePrefs.edit()
+            .putInt("requests", usagePrefs.getInt("requests", 0) + 1)
+            .putLong("inChars", usagePrefs.getLong("inChars", 0) + promptChars)
+            .putLong("outChars", usagePrefs.getLong("outChars", 0) + outChars)
+            .apply()
+    }
+
+    fun usageSummary(): String = runCatching {
+        val req = usagePrefs.getInt("requests", 0)
+        val inC = usagePrefs.getLong("inChars", 0)
+        val outC = usagePrefs.getLong("outChars", 0)
+        if (req == 0) "还没有请求记录" else
+            "请求 $req 次 · 输入约 ${inC / 1000}K 字 · 输出约 ${outC / 1000}K 字"
+    }.getOrElse { "读取失败" }
+
+    fun resetUsage() {
+        usagePrefs.edit().clear().apply()
+    }
+
+    // ---------------- 会话搜索 / 管理 ----------------
+
+    fun searchChats(query: String): List<com.pocketforge.ai.data.SessionHit> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        return runCatching {
+            sessions().flatMap { (key, title, _) ->
+                sessionStore.load(key)
+                    .filter { it.role == "user" || it.role == "assistant" }
+                    .mapNotNull { msg ->
+                        val text = msg.content.orEmpty()
+                        val idx = text.indexOf(q, ignoreCase = true)
+                        if (idx < 0) null else {
+                            val start = (idx - 30).coerceAtLeast(0)
+                            val end = (idx + q.length + 60).coerceAtMost(text.length)
+                            com.pocketforge.ai.data.SessionHit(key, title, text.substring(start, end).replace("\n", " "))
+                        }
+                    }
+                    .take(6)
+            }.take(40)
+        }.getOrDefault(emptyList())
+    }
+
+    fun renameSession(key: String, title: String): String {
+        sessionStore.setTitle(key, title.trim().ifEmpty { "未命名对话" })
+        if (key == sessionKey) _ui.update { it.copy(sessionTitle = title, projectName = title) }
+        return "已重命名"
+    }
+
+    fun deleteSession(key: String): String {
+        if (_ui.value.busy) return "正在执行，先停下再删"
+        sessionStore.clear(key)
+        if (key == sessionKey) {
+            history.clear()
+            switchSession("main")
+        }
+        return "已删除对话页"
+    }
+
+    // ---------------- 文件读写（应用内编辑器） ----------------
+
+    fun readFileText(path: String): String = runCatching {
+        val f = sandbox.resolveRead(path)
+        when {
+            !f.exists() -> "文件不存在：$path"
+            f.isDirectory -> "这是目录，先用文件列表进入具体文件"
+            f.length() > 512 * 1024 -> "文件超过 512KB，请用 Termux 或 fs_read 分段读"
+            else -> f.readText()
+        }
+    }.getOrElse { "读取失败：${it.message}" }
+
+    fun saveFileText(path: String, content: String): String = runCatching {
+        val rel = sandbox.relative(File(path))
+        val ws = sandbox.workspace()
+        DocLocks { ws }.check(rel, content, override = false)?.let { return it }
+        val f = sandbox.resolveWrite(path)
+        f.parentFile?.mkdirs()
+        f.writeText(content)
+        "已保存 ${content.length} 字"
+    }.getOrElse { "保存失败：${it.message}" }
+
     fun isNoRecall(): Boolean = noRecallMap().optBoolean(sessionKey, false)
 
     /** 开启后，本会话已写完的内容不可编辑、不可撤回 */
@@ -686,53 +771,84 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             val messageId = newId()
             _ui.update { it.copy(messages = it.messages + MsgUi(messageId, "assistant", streaming = true)) }
 
-            val buffer = StringBuilder()
-            val pending = sortedMapOf<Int, PendingCall>()
             var failure: String? = null
+            var content = ""
+            var toolCalls: List<ToolCall> = emptyList()
+            var attempt = 0
 
-            // 看门狗：单轮最多 150s，超时直接掐断连接，避免 UI 永远停在「生成中」
-            val timedOut = AtomicBoolean(false)
-            val watchdog = scope.launch {
-                delay(ROUND_TIMEOUT_MS)
-                timedOut.set(true)
-                runCatching { client.cancel() }
-            }
-            client.chat(config, buildMessages(config), tools.schemas) { event ->
-                when (event) {
-                    is AiEvent.Delta -> {
-                        buffer.append(event.text)
-                        updateText(messageId, buffer.toString())
-                    }
-                    is AiEvent.ToolDelta -> {
-                        val call = pending.getOrPut(event.index) { PendingCall() }
-                        event.id?.takeIf { it.isNotBlank() }?.let { call.id = it }
-                        event.name?.takeIf { it.isNotBlank() }?.let { call.name = it }
-                        event.args?.takeIf { it.isNotEmpty() }?.let { call.args.append(it) }
-                    }
-                    is AiEvent.Failed -> failure = event.message
-                    AiEvent.Done -> Unit
+            while (true) {
+                attempt++
+                val buffer = StringBuilder()
+                val pending = sortedMapOf<Int, PendingCall>()
+                failure = null
+
+                // 看门狗：单轮最多 150s，超时直接掐断连接，避免 UI 永远停在「生成中」
+                val timedOut = AtomicBoolean(false)
+                val watchdog = scope.launch {
+                    delay(ROUND_TIMEOUT_MS)
+                    timedOut.set(true)
+                    runCatching { client.cancel() }
                 }
-            }
-            watchdog.cancel()
-            if (timedOut.get()) {
-                failure = "本轮请求超过 ${ROUND_TIMEOUT_MS / 1000}s 没有响应，已中止。可拆小目标后重试。"
-            }
+                client.chat(config, buildMessages(config), tools.schemas) { event ->
+                    when (event) {
+                        is AiEvent.Delta -> {
+                            buffer.append(event.text)
+                            updateText(messageId, buffer.toString())
+                        }
+                        is AiEvent.ToolDelta -> {
+                            val call = pending.getOrPut(event.index) { PendingCall() }
+                            event.id?.takeIf { it.isNotBlank() }?.let { call.id = it }
+                            event.name?.takeIf { it.isNotBlank() }?.let { call.name = it }
+                            event.args?.takeIf { it.isNotEmpty() }?.let { call.args.append(it) }
+                        }
+                        is AiEvent.Failed -> failure = event.message
+                        AiEvent.Done -> Unit
+                    }
+                }
+                watchdog.cancel()
+                if (timedOut.get()) {
+                    failure = "本轮请求超过 ${ROUND_TIMEOUT_MS / 1000}s 没有响应，已中止。可拆小目标后重试。"
+                }
 
-            val content = buffer.toString()
-            val toolCalls = pending.values
-                .filter { it.name.isNotBlank() }
-                .map {
-                    ToolCall(
-                        id = it.id.ifBlank { newId() },
-                        name = it.name,
-                        arguments = it.args.toString().ifBlank { "{}" },
+                content = buffer.toString()
+                toolCalls = pending.values
+                    .filter { it.name.isNotBlank() }
+                    .map {
+                        ToolCall(
+                            id = it.id.ifBlank { newId() },
+                            name = it.name,
+                            arguments = it.args.toString().ifBlank { "{}" },
+                        )
+                    }
+
+                val transient = failure != null && (
+                    failure.contains("429") ||
+                        failure.contains("rate limit", true) ||
+                        failure.contains("TPM", true) ||
+                        failure.contains("too many", true) ||
+                        failure.contains("timeout", true) ||
+                        failure.contains("timed out", true) ||
+                        failure.contains("超时") ||
+                        failure.contains("中断")
                     )
+                if (transient && attempt <= 2 && content.isBlank() && toolCalls.isEmpty()) {
+                    updateText(messageId, "上游限流/超时，${6 * attempt} 秒后自动重试…")
+                    delay(6000L * attempt)
+                    continue
                 }
+                break
+            }
+
+            bumpUsage(buildMessages(config).sumOf { it.content?.length ?: 0 }, content.length)
 
             if (toolCalls.isEmpty() && content.isBlank()) {
-                throw IllegalStateException(
-                    failure ?: "模型这轮没有返回任何内容。可以把目标拆小一点，或到设置里点「测试连接」看通道是否正常。"
-                )
+                val friendly = when {
+                    failure == null -> "模型这轮没有返回任何内容。可以把目标拆小一点，或到设置里点「测试连接」看通道是否正常。"
+                    failure!!.contains("429") || failure!!.contains("TPM", true) ->
+                        "上游限流（429 Cluster TPM）：这条通道每分钟 token 额度用完了。等 1–2 分钟再发，或在设置里换模型 / 调低 max_tokens 与推理强度。"
+                    else -> failure
+                }
+                throw IllegalStateException(friendly)
             }
 
             history.add(ChatMessage(role = "assistant", content = content, toolCalls = toolCalls))
