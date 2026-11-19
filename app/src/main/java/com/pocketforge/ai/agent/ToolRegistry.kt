@@ -28,6 +28,8 @@ class ToolRegistry(
     private val onPlan: (List<PlanItem>) -> Unit,
     private val onProjectOpened: (String) -> Unit,
     private val onHostKeyLearned: (String) -> Unit = {},
+    private val updateCheck: () -> String = { "更新模块未接入" },
+    private val updateInstall: () -> String = { "更新模块未接入" },
 ) {
 
     private val locks = DocLocks { runCatching { sandbox.workspace() }.getOrNull() }
@@ -52,6 +54,9 @@ class ToolRegistry(
             "doc_locks" to "查看锁定清单",
             "termux_status" to "检查 Termux 连接",
             "termux_exec" to "在 Termux 执行命令",
+            "fs_search" to "搜索文件/内容",
+            "update_check" to "检查新版本",
+            "update_install" to "下载并安装新版",
         )
 
         private val WRITE_TOOLS = setOf(
@@ -92,6 +97,8 @@ class ToolRegistry(
                 "doc_locks" -> docLocks()
                 "termux_status" -> termuxStatus()
                 "termux_exec" -> termuxExec(args)
+                "update_check" -> ToolResult(true, updateCheck())
+                "update_install" -> ToolResult(true, updateInstall())
                 else -> ToolResult(false, "未知工具：$name")
             }
         } catch (t: Throwable) {
@@ -268,25 +275,51 @@ class ToolRegistry(
     private fun fsSearch(args: JSONObject): ToolResult {
         val query = args.optString("query").trim()
         require(query.isNotEmpty()) { "缺少参数 query" }
-        val rootRaw = args.optString("path", "").trim()
-        val root = if (rootRaw.isEmpty() || rootRaw == ".") sandbox.workspace() else sandbox.resolveRead(rootRaw)
+        val content = args.optBoolean("content", true)
+        val scope = args.optString("scope", "workspace").lowercase()
+        val pathRaw = args.optString("path", "").trim()
         val maxHits = args.optInt("maxHits", 40).coerceIn(1, 200)
+        val root = when {
+            pathRaw.isNotEmpty() && pathRaw != "." -> sandbox.resolveRead(pathRaw)
+            scope == "root" -> {
+                if (!sandbox.hasAllFilesAccess()) {
+                    return ToolResult(false, "没有「所有文件访问」权限，只能搜工作区")
+                }
+                File("/storage/emulated/0")
+            }
+            else -> sandbox.workspace()
+        }
+        if (!root.exists()) return ToolResult(false, "路径不存在：${root.absolutePath}")
+
         val hits = StringBuilder()
         var hitCount = 0
         var scanned = 0
 
         fun walk(file: File, depth: Int) {
-            if (hitCount >= maxHits || scanned > 4000 || depth > 8) return
+            if (hitCount >= maxHits || scanned > 6000 || depth > 8) return
             if (file.isDirectory) {
-                if (file.name in listOf(".git", "build", "node_modules", ".trash")) return
+                if (file.name in listOf(".git", "build", "node_modules", ".trash", "Android")) return
                 file.listFiles()?.forEach { walk(it, depth + 1) }
                 return
             }
-            if (file.length() == 0L || file.length() > 200_000) return
-            val ext = file.extension.lowercase()
-            if (ext in listOf("png", "jpg", "jpeg", "webp", "gif", "mp3", "mp4", "wav", "zip", "apk", "jar", "ogg", "ttf", "db")) return
+            if (file.length() == 0L) return
             scanned++
+            val nameHit = file.name.contains(query, ignoreCase = true)
+            if (!content) {
+                if (nameHit && hitCount < maxHits) {
+                    hitCount++
+                    hits.append(sandbox.relative(file)).append('\n')
+                }
+                return
+            }
+            if (file.length() > 2_000_000L) return
+            val ext = file.extension.lowercase()
+            if (ext in listOf("png","jpg","jpeg","webp","gif","mp3","mp4","wav","zip","apk","jar","ogg","ttf","db")) return
             val lines = runCatching { file.readLines() }.getOrNull() ?: return
+            if (nameHit && hitCount < maxHits) {
+                hitCount++
+                hits.append(sandbox.relative(file)).append("  [文件名命中]\n")
+            }
             lines.forEachIndexed { index, line ->
                 if (hitCount < maxHits && line.contains(query, ignoreCase = true)) {
                     hitCount++
@@ -296,7 +329,7 @@ class ToolRegistry(
             }
         }
         walk(root, 0)
-        val summary = if (hitCount == 0) "未找到包含「$query」的内容（扫描 $scanned 个文本文件）"
+        val summary = if (hitCount == 0) "未找到「$query」（扫描 $scanned 个文件）"
         else "命中 $hitCount 处（扫描 $scanned 个文件）"
         return ToolResult(true, summary, hits.toString())
     }
@@ -1155,6 +1188,20 @@ class Storage(private val root: File) {
                 listOf("items")
             )
         )
+        arr.put(
+            fn(
+                "fs_search",
+                "在工作区（或公共存储根目录，只读）按文件名或内容搜索。返回路径，内容命中带行号。",
+                JSONObject()
+                    .put("query", prop("string", "关键词"))
+                    .put("content", prop("boolean", "是否搜文件内容，默认 false（只搜文件名）"))
+                    .put("scope", prop("string", "workspace 或 root，默认 workspace"))
+                    .put("limit", prop("integer", "最多返回条数，默认 40")),
+                listOf("query")
+            )
+        )
+        arr.put(fn("update_check", "检查 GitHub Release 是否有新版本（读 updateRepo 配置）。", JSONObject(), emptyList()))
+        arr.put(fn("update_install", "下载最新 release APK，校验包名与签名后拉起系统安装器。", JSONObject(), emptyList()))
         arr.put(
             fn(
                 "doc_lock",
