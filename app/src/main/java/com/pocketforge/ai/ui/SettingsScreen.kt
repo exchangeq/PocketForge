@@ -57,6 +57,10 @@ fun SettingsScreen(
     selfCheck: () -> String,
     onTermuxTest: suspend () -> String,
     onTrustHostKey: () -> String,
+    currentVersion: String = "",
+    onCheckUpdate: suspend () -> String = { "" },
+    onDownloadInstall: suspend ((Int, String) -> Unit) -> String = { "未接入" },
+    onOpenUrl: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
 
@@ -81,6 +85,8 @@ fun SettingsScreen(
     var skillsGate by remember(config) { mutableStateOf(config.skillsGate) }
     var skillRepoUrl by remember(config) { mutableStateOf(config.skillRepoUrl) }
     var skillRepoToken by remember(config) { mutableStateOf(config.skillRepoToken) }
+    var updateRepo by remember(config) { mutableStateOf(config.updateRepo) }
+    var githubToken by remember(config) { mutableStateOf(config.githubToken) }
 
     var tHost by remember(config) { mutableStateOf(config.termuxHost) }
     var tPort by remember(config) { mutableStateOf(config.termuxPort.toString()) }
@@ -97,6 +103,10 @@ fun SettingsScreen(
     var termuxTesting by remember { mutableStateOf(false) }
     var savedTip by remember { mutableStateOf("") }
     var hostKey by remember { mutableStateOf(config.termuxHostKey) }
+    var updateMsg by remember { mutableStateOf("") }
+    var updateProgress by remember { mutableStateOf("") }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
 
     fun buildConfig(): AppConfig = config.copy(
         baseUrl = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" },
@@ -112,6 +122,8 @@ fun SettingsScreen(
         skillsGate = skillsGate,
         skillRepoUrl = skillRepoUrl.trim(),
         skillRepoToken = skillRepoToken.trim(),
+        updateRepo = updateRepo.trim().ifEmpty { "exchangeq/PocketForge" },
+        githubToken = githubToken.trim(),
         termuxHost = tHost.trim().ifEmpty { "127.0.0.1" },
         termuxPort = tPort.trim().toIntOrNull() ?: 8022,
         termuxUser = tUser.trim(),
@@ -408,6 +420,90 @@ fun SettingsScreen(
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        SectionTitle("远程更新", "从 GitHub Release 拉新版；只认本应用签名，签名不符直接拒绝安装")
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                InfoLine("当前版本", currentVersion.ifBlank { "未知" })
+                OutlinedTextField(
+                    value = updateRepo,
+                    onValueChange = { updateRepo = it },
+                    label = { Text("更新源（owner/repo）") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = githubToken,
+                    onValueChange = { githubToken = it },
+                    label = { Text("GitHub 令牌（私有仓库/限流才需要）") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "生成令牌 → https://github.com/settings/tokens/new?scopes=repo&description=PocketForge",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    lineHeight = 16.sp,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable {
+                            onOpenUrl("https://github.com/settings/tokens/new?scopes=repo&description=PocketForge")
+                        },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    TextButton(
+                        enabled = !checkingUpdate && !downloading,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        onClick = {
+                            checkingUpdate = true
+                            updateMsg = ""
+                            scope.launch {
+                                onSave(buildConfig())
+                                updateMsg = withContext(Dispatchers.IO) { onCheckUpdate() }
+                                checkingUpdate = false
+                            }
+                        },
+                    ) { Text(if (checkingUpdate) "检查中…" else "检查更新") }
+
+                    TextButton(
+                        enabled = !downloading,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        onClick = {
+                            downloading = true
+                            updateProgress = "准备下载…"
+                            scope.launch {
+                                onSave(buildConfig())
+                                val result = withContext(Dispatchers.IO) {
+                                    onDownloadInstall { percent, text -> updateProgress = "$percent%  $text" }
+                                }
+                                updateMsg = result
+                                downloading = false
+                            }
+                        },
+                    ) { Text(if (downloading) "下载中…" else "下载并安装") }
+                }
+                if (updateProgress.isNotEmpty() && downloading) {
+                    Text(updateProgress, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (updateMsg.isNotEmpty()) {
+                    Text(
+                        updateMsg,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (updateMsg.contains("最新") || updateMsg.contains("已拉起")) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp,
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         SectionTitle("权限体检", "逐项核对，缺哪项就补哪项")
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -471,6 +567,7 @@ fun SettingsScreen(
                 InfoLine("推理强度", when (effort) { "off" -> "关"; "low" -> "低"; "high" -> "高"; "max" -> "极高"; else -> "中" })
                 InfoLine("技能源", skillRepoUrl.ifBlank { "内置" })
                 InfoLine("Termux", "${tUser.ifBlank { "未配置" }}@${tHost.ifBlank { "127.0.0.1" }}:${tPort.ifBlank { "8022" }}")
+                InfoLine("更新源", updateRepo.ifBlank { "exchangeq/PocketForge" })
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
