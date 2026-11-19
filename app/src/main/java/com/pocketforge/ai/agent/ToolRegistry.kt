@@ -5,6 +5,7 @@ import com.pocketforge.ai.core.Sandbox
 import com.pocketforge.ai.data.AppConfig
 import com.pocketforge.ai.data.PlanItem
 import com.pocketforge.ai.data.ToolResult
+import com.pocketforge.ai.termux.SshClient
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -26,6 +27,7 @@ class ToolRegistry(
     private val onSkillRead: (String) -> Unit,
     private val onPlan: (List<PlanItem>) -> Unit,
     private val onProjectOpened: (String) -> Unit,
+    private val onHostKeyLearned: (String) -> Unit = {},
 ) {
 
     companion object {
@@ -42,10 +44,13 @@ class ToolRegistry(
             "project_new" to "创建项目骨架",
             "plan_set" to "更新任务计划",
             "config_info" to "查看运行配置",
+            "skill_install" to "下载并注入技能",
+            "termux_status" to "检查 Termux 连接",
+            "termux_exec" to "在 Termux 执行命令",
         )
 
         private val WRITE_TOOLS = setOf(
-            "fs_write", "fs_mkdir", "fs_move", "fs_delete", "project_new"
+            "fs_write", "fs_mkdir", "fs_move", "fs_delete", "project_new", "termux_exec"
         )
 
         fun label(name: String): String = LABELS[name] ?: name
@@ -76,6 +81,9 @@ class ToolRegistry(
                 "project_new" -> projectNew(args)
                 "plan_set" -> planSet(args)
                 "config_info" -> configInfo()
+                "skill_install" -> skillInstall(args)
+                "termux_status" -> termuxStatus()
+                "termux_exec" -> termuxExec(args)
                 else -> ToolResult(false, "未知工具：$name")
             }
         } catch (t: Throwable) {
@@ -87,24 +95,32 @@ class ToolRegistry(
 
     private fun skillsIndex(): ToolResult {
         val workspace = sandbox.workspace()
-        val dir = skills.installTo(workspace)
+        skills.installTo(workspace)
+        val dir = skills.skillsDir(workspace)
         onIndexRead()
         val payload = buildString {
-            appendLine(skills.index())
+            appendLine(skills.index(workspace))
             appendLine()
-            appendLine(skills.catalog())
+            appendLine(skills.catalog(workspace))
             appendLine()
             appendLine("工作区：${workspace.absolutePath}")
             appendLine("技能副本：${dir.absolutePath}")
+            if (skills.isForced(workspace)) {
+                appendLine("强制注入：已开启（仅本工作区生效，缺失技能不会用内置基线顶替）")
+            }
         }
         return ToolResult(true, "已读取技能总索引（${workspace.absolutePath}/skills）", payload)
     }
 
     private fun skillRead(args: JSONObject): ToolResult {
-        val name = args.optString("name").trim()
+        val name = skills.sanitizeName(args.optString("name").trim())
         require(name.isNotEmpty()) { "缺少参数 name" }
-        require(name in SkillLibrary.ENTRIES.map { it.first }) { "技能文件不存在：$name" }
-        val content = skills.read(name)
+        val workspace = sandbox.workspace()
+        val local = File(skills.skillsDir(workspace), name)
+        require(name in SkillLibrary.ENTRIES.map { it.first } || local.isFile) {
+            "技能文件不存在：$name（可先用 skill_install 从远端注入，或读取 skills_index 查看清单）"
+        }
+        val content = skills.read(name, workspace)
         require(content.isNotBlank()) { "技能文件为空：$name" }
         onSkillRead(name)
         return ToolResult(true, "已读取技能：$name", content)
@@ -282,7 +298,7 @@ class ToolRegistry(
         dir.mkdirs()
 
         val skillName = skills.skillFor(type)
-        val skillText = skills.read(skillName).ifBlank { skills.index() }
+        val skillText = skills.read(skillName, sandbox.workspace()).ifBlank { skills.index(sandbox.workspace()) }
 
         val created = mutableListOf<String>()
         fun touch(rel: String, content: String) {
@@ -424,8 +440,86 @@ class ToolRegistry(
             appendLine("workspace: ${sandbox.workspace().absolutePath}")
             appendLine("skillsGate: ${cfg.skillsGate}")
             appendLine("allFilesAccess: ${sandbox.hasAllFilesAccess()}")
+            appendLine("skillSource: ${cfg.skillRepoUrl.ifBlank { "内置" }}")
+            appendLine("forceInject: ${skills.isForced(sandbox.workspace())}")
+            appendLine("termux: ${cfg.termuxUser.ifBlank { "未配置" }}@${cfg.termuxHost}:${cfg.termuxPort} (${cfg.termuxAuth}) allowShell=${cfg.allowShell}")
+            appendLine("termuxHostKey: ${cfg.termuxHostKey.ifBlank { "未记录" }}")
         }
         return ToolResult(true, "运行配置（已脱敏）", payload)
+    }
+
+    // ---------------- 技能注入 ----------------
+
+    private fun skillInstall(args: JSONObject): ToolResult {
+        val cfg = configProvider()
+        val url = args.optString("url", "").trim().ifBlank { cfg.skillRepoUrl }
+        val token = args.optString("token", "").ifBlank { cfg.skillRepoToken }
+        val force = args.optBoolean("force", false)
+        require(url.isNotBlank()) { "未提供技能地址，也没有配置默认技能源" }
+        val workspace = sandbox.workspace()
+        val result = skills.remoteInstall(url, token, workspace, force)
+        if (!result.ok) return ToolResult(false, result.message)
+        onSkillRead("SKILLS.md")
+        return ToolResult(
+            true,
+            result.message,
+            buildString {
+                appendLine("来源：$url")
+                appendLine("落盘：${skills.skillsDir(workspace).absolutePath}")
+                appendLine("强制注入：${if (skills.isForced(workspace)) "开" else "关"}")
+                appendLine()
+                appendLine(skills.catalog(workspace))
+            }.toString()
+        )
+    }
+
+    // ---------------- Termux ----------------
+
+    private fun termuxStatus(): ToolResult {
+        val cfg = configProvider()
+        if (cfg.termuxUser.isBlank()) {
+            return ToolResult(
+                false,
+                "Termux 还没配：设置页填主机、端口、用户名（Termux 内 whoami）、密码或私钥。",
+            )
+        }
+        val outcome = SshClient.test(cfg)
+        if (outcome.hostKeyLearned && outcome.fingerprint.isNotBlank()) onHostKeyLearned(outcome.fingerprint)
+        return ToolResult(
+            outcome.ok,
+            if (outcome.ok) "Termux 连接正常（allowShell=${cfg.allowShell}）" else outcome.message,
+            buildString {
+                appendLine("host: ${cfg.termuxHost}:${cfg.termuxPort}")
+                appendLine("user: ${cfg.termuxUser}")
+                appendLine("auth: ${cfg.termuxAuth}")
+                appendLine("allowShell: ${cfg.allowShell}")
+                appendLine("hostKey: ${outcome.fingerprint.ifBlank { cfg.termuxHostKey.ifBlank { "未记录" } }}")
+                appendLine()
+                appendLine(outcome.message)
+            }.toString()
+        )
+    }
+
+    private fun termuxExec(args: JSONObject): ToolResult {
+        val cfg = configProvider()
+        if (!cfg.allowShell) {
+            return ToolResult(
+                false,
+                "设置页的「允许 AI 在 Termux 执行命令」是关闭状态。需要时打开它，我只在 Termux 自己的目录里干活。",
+            )
+        }
+        val command = args.optString("command").trim()
+        require(command.isNotEmpty()) { "缺少参数 command" }
+        val timeoutSec = args.optInt("timeoutSec", 30).coerceIn(5, 120)
+        val outcome = SshClient.exec(cfg, command, timeoutSec * 1000)
+        if (outcome.hostKeyLearned && outcome.fingerprint.isNotBlank()) onHostKeyLearned(outcome.fingerprint)
+        val body = buildString {
+            appendLine("$ ${command}")
+            appendLine()
+            append(outcome.message)
+            if (outcome.exit >= 0) append("\n\nexit=${outcome.exit}")
+        }
+        return ToolResult(outcome.ok, if (outcome.ok) "Termux 执行完成" else "Termux 执行未成功", body)
     }
 
     // ---------------- 工具 schema ----------------
@@ -541,6 +635,30 @@ class ToolRegistry(
                         .put("items", JSONObject().put("type", "string"))
                 ),
                 listOf("items")
+            )
+        )
+        arr.put(
+            fn(
+                "skill_install",
+                "从远端下载技能 Markdown 并注入当前工作区的 skills/ 目录（支持单个 .md 或 skills-index.json 清单）。force=true 时覆盖已有并开启「仅本工作区」的强制注入。",
+                JSONObject()
+                    .put("url", prop("string", "技能地址；留空则用设置里的默认技能源"))
+                    .put("token", prop("string", "私有仓库访问令牌，可留空"))
+                    .put("force", prop("boolean", "是否覆盖并开启强制注入，默认 false")),
+                emptyList()
+            )
+        )
+        arr.put(
+            fn("termux_status", "检查 Termux 的 SSH 是否连通（含主机指纹 TOFU 记录）。", JSONObject(), emptyList())
+        )
+        arr.put(
+            fn(
+                "termux_exec",
+                "在 Termux 里执行一条 shell 命令（需在设置里打开 allowShell）。破坏性命令会被拦截，默认 30s 超时。",
+                JSONObject()
+                    .put("command", prop("string", "要执行的命令，例如 pkg list-installed | head"))
+                    .put("timeoutSec", prop("integer", "超时秒数 5-120，默认 30")),
+                listOf("command")
             )
         )
         arr.put(
