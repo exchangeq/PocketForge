@@ -62,6 +62,8 @@
 | 发版 | `release-checklist.md` + `android-build.md` | APK + 变更日志 |
 | Termux / 构建 | `termux.md` + `cli-build-termux.md` | SSH、gradle |
 | 版本管理 | `git-workflow.md` | 提交规范 |
+| 检查/安装新版 | `remote-update.md` | 版本对比、签名校验 |
+| 找文件/搜内容 | `file-search.md` | fs_search 用法 |
 | 想改 API / 加密 / 数据流 | `runtime-config.md` | 配置说明、协议对照 |
 | 每次对答的措辞结构 | `answer-style.md` | 结论 / 关键点 / 文件 / 下一步 |
 | 每次对答的排版 | `markdown-style.md` | 标题层级、表格、代码块 |
@@ -71,7 +73,7 @@
 
 ### 2.0 技能总量
 
-本工作区共 **45 份**技能（`skills-index.json` 里有清单与 sha256）。**按需读 1~3 份**，不要全读；读与当前任务无关的技能等于浪费时间与上下文。
+本工作区共 **47 份**技能（`skills-index.json` 里有清单与 sha256）。**按需读 1~3 份**，不要全读；读与当前任务无关的技能等于浪费时间与上下文。
 
 ### 2.2 长文本没有上限，但要分卷
 
