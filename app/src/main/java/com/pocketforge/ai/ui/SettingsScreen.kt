@@ -63,17 +63,25 @@ fun SettingsScreen(
     onOpenUrl: (String) -> Unit = {},
     onStorageUsage: () -> String = { "" },
     onClearCache: () -> String = { "" },
+    keepAlive: Boolean = false,
+    onToggleKeepAlive: (Boolean) -> Unit = {},
+    onBatteryWhitelist: () -> Unit = {},
+    onAppSettings: () -> Unit = {},
+    onUsage: () -> String = { "" },
+    onResetUsage: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
 
     var permReport by remember { mutableStateOf("") }
     var usage by remember { mutableStateOf("") }
+    var tokenUsage by remember { mutableStateOf("") }
     var checkResult by remember { mutableStateOf("") }
     var checking by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         permReport = withContext(Dispatchers.IO) { permissionReport() }
         usage = withContext(Dispatchers.IO) { onStorageUsage() }
+        tokenUsage = withContext(Dispatchers.IO) { onUsage() }
     }
 
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
@@ -566,6 +574,37 @@ fun SettingsScreen(
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        SectionTitle("后台常驻", "前台服务 + 唤醒锁 + 开机自启；Android 不允许绝对杀不死，这套是系统允许范围内最强的一档")
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = keepAlive, onCheckedChange = onToggleKeepAlive)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("长任务后台继续跑", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "开启后常驻通知栏；划掉最近任务会被自动拉回，开机自启",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = onBatteryWhitelist, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text("电池优化白名单", fontSize = 11.sp)
+                    }
+                    TextButton(onClick = onAppSettings, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text("自启动/省电设置", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         SectionTitle("运行环境")
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -582,6 +621,7 @@ fun SettingsScreen(
                 InfoLine("Termux", "${tUser.ifBlank { "未配置" }}@${tHost.ifBlank { "127.0.0.1" }}:${tPort.ifBlank { "8022" }}")
                 InfoLine("更新源", updateRepo.ifBlank { "exchangeq/PocketForge" })
                 InfoLine("占用", usage.ifBlank { "统计中…" })
+                InfoLine("用量", tokenUsage.ifBlank { "暂无记录" })
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -599,6 +639,13 @@ fun SettingsScreen(
                 contentPadding = PaddingValues(horizontal = 6.dp),
                 onClick = { scope.launch { usage = withContext(Dispatchers.IO) { onStorageUsage() } } },
             ) { Text("刷新占用") }
+            TextButton(
+                contentPadding = PaddingValues(horizontal = 6.dp),
+                onClick = {
+                    onResetUsage()
+                    scope.launch { tokenUsage = withContext(Dispatchers.IO) { onUsage() } }
+                },
+            ) { Text("重置用量") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(
