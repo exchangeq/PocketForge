@@ -60,6 +60,9 @@ fun ProjectScreen(
     onForceInject: () -> String,
     onDisableForce: () -> String,
     onUnlock: (String) -> String,
+    onPickFiles: () -> Unit = {},
+    onProjectClick: (String) -> List<String> = { emptyList() },
+    notice: String = "",
 ) {
     val scope = rememberCoroutineScope()
     var showCreate by remember { mutableStateOf(false) }
@@ -73,6 +76,8 @@ fun ProjectScreen(
     var forceInstall by remember { mutableStateOf(true) }
     var working by remember { mutableStateOf(false) }
     var createResult by remember { mutableStateOf<String?>(null) }
+    var fileList by remember { mutableStateOf<List<String>?>(null) }
+    var fileListTitle by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier
@@ -133,7 +138,14 @@ fun ProjectScreen(
 
         items(projects) { name ->
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        scope.launch {
+                            fileListTitle = name
+                            fileList = withContext(Dispatchers.IO) { onProjectClick(name) }
+                        }
+                    },
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -218,6 +230,10 @@ fun ProjectScreen(
                         ) { Text(if (working) "注入中…" else "远程注入") }
                         TextButton(
                             contentPadding = PaddingValues(horizontal = 8.dp),
+                            onClick = onPickFiles,
+                        ) { Text("手机文件注入") }
+                        TextButton(
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                             onClick = {
                                 scope.launch {
                                     message = withContext(Dispatchers.IO) { onSyncBundled() }
@@ -239,6 +255,14 @@ fun ProjectScreen(
                                 },
                             ) { Text("强制注入") }
                         }
+                    }
+                    if (notice.isNotEmpty()) {
+                        Text(
+                            notice,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            lineHeight = 16.sp,
+                        )
                     }
                     if (message.isNotEmpty()) {
                         Text(
@@ -412,6 +436,7 @@ fun ProjectScreen(
                                 onCreate(name, projectType, projectEngine.trim())
                             }
                             projectName = ""
+                            projectEngine = ""
                             message = "已创建 $name"
                             createResult = result
                             onRefresh()
@@ -453,6 +478,36 @@ fun ProjectScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { createResult = null }) { Text("知道了") } },
+        )
+    }
+
+    fileList?.let { files ->
+        AlertDialog(
+            onDismissRequest = { fileList = null },
+            title = { Text("$fileListTitle（${files.size} 项）", style = MaterialTheme.typography.titleSmall) },
+            text = {
+                SelectionContainer {
+                    Column(
+                        Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (files.isEmpty()) {
+                            Text("目录还是空的", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            files.forEach { path ->
+                                Text(
+                                    path,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 17.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { fileList = null }) { Text("关闭") } },
         )
     }
 
