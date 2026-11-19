@@ -25,7 +25,7 @@ class Sandbox(
             "/storage/emulated/0/Android/data", "/storage/emulated/0/Android/obb",
         )
         const val MAX_READ_BYTES = 512 * 1024
-        const val MAX_WRITE_BYTES = 2 * 1024 * 1024
+        const val MAX_WRITE_BYTES = 4 * 1024 * 1024
         const val MAX_LIST_ENTRIES = 800
     }
 
