@@ -8,12 +8,14 @@ data class AppConfig(
     val apiKey: String = "",
     val model: String = "gpt-4o-mini",
     val temperature: Double = 0.4,
-    val maxTokens: Int = 4096,
+    val maxTokens: Int = 8192,
+    // 推理强度：off / low / medium / high / max，透传给支持 reasoning_effort 的上游
+    val reasoningEffort: String = "medium",
     val stream: Boolean = true,
     val workspaceRoot: String = "",
     val skillsGate: Boolean = true,
     val streamCipherKey: String = "",
-    val maxSteps: Int = 30,
+    val maxSteps: Int = 40,
     val systemExtra: String = "",
     // 技能源：默认指向本仓库的 skills 目录，可换成自己的私有地址
     val skillRepoUrl: String = "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills",
@@ -36,6 +38,7 @@ data class AppConfig(
         put("model", model)
         put("temperature", temperature)
         put("maxTokens", maxTokens)
+        put("reasoningEffort", reasoningEffort)
         put("stream", stream)
         put("workspaceRoot", workspaceRoot)
         put("skillsGate", skillsGate)
@@ -75,12 +78,13 @@ data class AppConfig(
             apiKey = raw.optString("apiKey", ""),
             model = raw.optString("model", "gpt-4o-mini"),
             temperature = raw.optDouble("temperature", 0.4),
-            maxTokens = raw.optInt("maxTokens", 4096),
+            maxTokens = raw.optInt("maxTokens", 8192),
+            reasoningEffort = raw.optString("reasoningEffort", "medium"),
             stream = raw.optBoolean("stream", true),
             workspaceRoot = raw.optString("workspaceRoot", ""),
             skillsGate = raw.optBoolean("skillsGate", true),
             streamCipherKey = raw.optString("streamCipherKey", ""),
-            maxSteps = raw.optInt("maxSteps", 30),
+            maxSteps = raw.optInt("maxSteps", 40),
             systemExtra = raw.optString("systemExtra", ""),
             skillRepoUrl = raw.optString(
                 "skillRepoUrl",
