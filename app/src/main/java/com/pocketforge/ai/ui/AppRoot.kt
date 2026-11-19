@@ -68,6 +68,8 @@ fun AppRoot() {
     var skills by remember { mutableStateOf(engine.skillStatus()) }
     var forced by remember { mutableStateOf(engine.forceInjected()) }
     var locks by remember { mutableStateOf(engine.lockedDocs()) }
+    var notice by remember { mutableStateOf("") }
+    var updateTag by remember { mutableStateOf<String?>(null) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -76,7 +78,18 @@ fun AppRoot() {
         projects = engine.projectNames()
     }
 
+    val skillPickLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            engine.onIo { notice = engine.installSkillFiles(uris); skills = engine.skillStatus() }
+        }
+    }
+
     LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { updateTag = engine.updateAvailable() }
+        }
         projects = engine.projectNames()
         skills = engine.skillStatus()
         forced = engine.forceInjected()
@@ -99,7 +112,9 @@ fun AppRoot() {
             projectName = state.projectName,
             busy = state.busy,
             hasKey = hasKey,
+            updateTag = updateTag,
             onOpenSettings = { tab = 2 },
+            onUpdateClick = { tab = 2 },
         )
 
         // 关键：内容区必须用 weight，否则 fillMaxSize 会吃掉底部导航的高度
@@ -166,6 +181,13 @@ fun AppRoot() {
                         locks = engine.lockedDocs()
                         result
                     },
+                    onPickFiles = {
+                        skillPickLauncher.launch(
+                            arrayOf("text/markdown", "text/plain", "application/octet-stream")
+                        )
+                    },
+                    onProjectClick = { name -> engine.projectFiles(name) },
+                    notice = notice,
                 )
 
                 else -> SettingsScreen(
@@ -231,7 +253,9 @@ private fun Header(
     projectName: String,
     busy: Boolean,
     hasKey: Boolean,
+    updateTag: String?,
     onOpenSettings: () -> Unit,
+    onUpdateClick: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column {
@@ -262,6 +286,23 @@ private fun Header(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (updateTag != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .clickable(onClick = onUpdateClick),
+                    ) {
+                        Text(
+                            "新版本 $updateTag",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        )
+                    }
                 }
                 Surface(
                     shape = CircleShape,
