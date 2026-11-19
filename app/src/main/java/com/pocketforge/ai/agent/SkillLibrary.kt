@@ -203,6 +203,7 @@ class SkillLibrary(private val context: Context) {
             val dir = skillsDir(workspace)
             dir.mkdirs()
             var count = 0
+            var skipped = 0
             files.forEach { (name, content) ->
                 val safe = sanitizeName(name)
                 if (content.contains("#") && content.length in 16..MAX_SKILL_BYTES) {
@@ -211,8 +212,7 @@ class SkillLibrary(private val context: Context) {
                         target.writeText(content)
                         count++
                     } else {
-                        target.writeText(content)
-                        count++
+                        skipped++
                     }
                 }
             }
@@ -220,7 +220,11 @@ class SkillLibrary(private val context: Context) {
                 runCatching { File(dir, FORCE_MARK).writeText("remote ${System.currentTimeMillis()}") }
             }
             writeManifest(dir)
-            RemoteResult(true, "已注入 $count 个技能文件到 ${dir.absolutePath}", count)
+            RemoteResult(
+                true,
+                "已注入 $count 个技能文件到 ${dir.absolutePath}" + if (skipped > 0) "（$skipped 个已存在，保持原样）" else "",
+                count,
+            )
         } catch (t: Throwable) {
             RemoteResult(false, "下载失败：${t.message}", 0)
         }
