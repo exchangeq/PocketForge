@@ -28,15 +28,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 代理循环：一条用户消息 → N 轮「模型输出 / 工具执行」，每步折叠成一张卡片。
  * 技能闸门（skillsGate）在这里强制生效：没读完技能就写文件会被工具层拒绝。
  */
 class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
+
+    companion object {
+        private const val ROUND_TIMEOUT_MS = 150_000L
+    }
 
     private val appContext = context.applicationContext
     private val sandbox = Sandbox(appContext) { configRepo.config.value }
@@ -67,6 +73,9 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         onSkillRead = { name -> readSkills.add(name) },
         onPlan = { plan -> _ui.update { it.copy(plan = plan) } },
         onProjectOpened = { name -> _ui.update { it.copy(projectName = name) } },
+        onHostKeyLearned = { fingerprint ->
+            runCatching { configRepo.save(configRepo.config.value.copy(termuxHostKey = fingerprint)) }
+        },
     )
 
     init {
@@ -120,11 +129,25 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     st.copy(
                         busy = false,
                         lastError = t.message ?: t.javaClass.simpleName,
-                        messages = st.messages.map { m -> if (m.streaming) m.copy(streaming = false) else m },
+                        messages = st.messages.map { m ->
+                            when {
+                                m.streaming && m.text.isBlank() -> m.copy(
+                                    text = "这轮没拿到有效回复，可能网络中断或超时。再发一次，或到设置点「测试连接」检查通道。",
+                                    streaming = false,
+                                )
+                                m.streaming -> m.copy(streaming = false)
+                                else -> m
+                            }
+                        },
                     )
                 }
             } finally {
-                _ui.update { it.copy(busy = false) }
+                _ui.update { st ->
+                    st.copy(
+                        busy = false,
+                        messages = st.messages.map { m -> if (m.streaming) m.copy(streaming = false) else m },
+                    )
+                }
                 sessionStore.save(history)
             }
         }
@@ -193,12 +216,64 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         sandbox.projectsDir().listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
     }.getOrElse { emptyList() }
 
-    fun installSkills(): String = runCatching { skills.installTo(sandbox.workspace()).absolutePath }
-        .getOrElse { "安装失败：${it.message}" }
+    fun installSkills(): String = runCatching {
+        val count = skills.installTo(sandbox.workspace(), force = false)
+        "已同步 $count 个内置技能 → ${skills.skillsDir(sandbox.workspace()).absolutePath}"
+    }.getOrElse { "安装失败：${it.message}" }
 
     fun skillEntries(): List<Pair<String, String>> = SkillLibrary.ENTRIES
 
-    fun skillText(name: String): String = skills.read(name)
+    fun skillText(name: String): String = skills.read(name, runCatching { sandbox.workspace() }.getOrNull())
+
+    /** 技能中心数据：文件名、说明、是否已落在当前工作区 */
+    fun skillStatus(): List<Triple<String, String, Boolean>> {
+        val ws = runCatching { sandbox.workspace() }.getOrNull()
+        val dir = ws?.let { skills.skillsDir(it) }
+        val locals = dir?.listFiles { f -> f.isFile && f.name.endsWith(".md") }?.map { it.name }?.toSet()
+            ?: emptySet()
+        val extras = locals.filter { name -> SkillLibrary.ENTRIES.none { it.first == name } }
+        return SkillLibrary.ENTRIES.map { (name, desc) -> Triple(name, desc, locals.contains(name)) } +
+            extras.map { Triple(it, "工作区自定义技能", true) }
+    }
+
+    fun forceInjected(): Boolean = runCatching { skills.isForced(sandbox.workspace()) }.getOrDefault(false)
+
+    fun installRemoteSkills(url: String, token: String, force: Boolean): String {
+        val ws = runCatching { sandbox.workspace() }.getOrNull()
+            ?: return "工作区不可用，无法注入"
+        val result = skills.remoteInstall(url, token, ws, force)
+        if (result.ok) {
+            indexRead = true
+            readSkills.add("SKILLS.md")
+            _ui.update { it.copy(skillsLoaded = true) }
+        }
+        return result.message
+    }
+
+    fun forceInjectFromBundle(): String = runCatching {
+        val count = skills.forceInject(sandbox.workspace())
+        indexRead = true
+        _ui.update { it.copy(skillsLoaded = true) }
+        "强制注入完成：$count 个文件，仅当前工作区生效（${skills.skillsDir(sandbox.workspace()).absolutePath}）"
+    }.getOrElse { "强制注入失败：${it.message}" }
+
+    fun disableForceInject(): String = runCatching {
+        skills.clearForce(sandbox.workspace())
+        "已关闭强制注入，之后缺失的技能会回退到内置基线"
+    }.getOrElse { "取消失败：${it.message}" }
+
+    fun termuxTest(): String {
+        val outcome = com.pocketforge.ai.termux.SshClient.test(configRepo.config.value)
+        if (outcome.hostKeyLearned && outcome.fingerprint.isNotBlank()) {
+            configRepo.save(configRepo.config.value.copy(termuxHostKey = outcome.fingerprint))
+        }
+        return outcome.message
+    }
+
+    fun trustNewHostKey(): String {
+        configRepo.save(configRepo.config.value.copy(termuxHostKey = ""))
+        return "已清除记录的主机指纹，下次连接会重新学习"
+    }
 
     fun createProject(name: String, type: String, engine: String): ToolResult {
         val args = JSONObject()
@@ -224,6 +299,13 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             val pending = sortedMapOf<Int, PendingCall>()
             var failure: String? = null
 
+            // 看门狗：单轮最多 150s，超时直接掐断连接，避免 UI 永远停在「生成中」
+            val timedOut = AtomicBoolean(false)
+            val watchdog = scope.launch {
+                delay(ROUND_TIMEOUT_MS)
+                timedOut.set(true)
+                runCatching { client.cancel() }
+            }
             client.chat(config, buildMessages(config), tools.schemas) { event ->
                 when (event) {
                     is AiEvent.Delta -> {
@@ -240,6 +322,10 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     AiEvent.Done -> Unit
                 }
             }
+            watchdog.cancel()
+            if (timedOut.get()) {
+                failure = "本轮请求超过 ${ROUND_TIMEOUT_MS / 1000}s 没有响应，已中止。可拆小目标后重试。"
+            }
 
             val content = buffer.toString()
             val toolCalls = pending.values
@@ -253,11 +339,13 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 }
 
             if (toolCalls.isEmpty() && content.isBlank()) {
-                throw IllegalStateException(failure ?: "模型没有返回内容")
+                throw IllegalStateException(
+                    failure ?: "模型这轮没有返回任何内容。可以把目标拆小一点，或到设置里点「测试连接」看通道是否正常。"
+                )
             }
 
             history.add(ChatMessage(role = "assistant", content = content, toolCalls = toolCalls))
-            finishMessage(messageId, content, failure)
+            finishMessage(messageId, content, failure, toolCalls.size)
 
             if (toolCalls.isEmpty()) break
 
@@ -325,6 +413,14 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         appendLine("5. 删除一律用 fs_delete（默认进 .trash 回收站）。")
         appendLine("6. 回复用中文：先给结论，再列「改了哪些文件」，最后给「下一步」。不要输出 API Key 或任何密钥。")
         appendLine("7. 游戏项目只做纯前端/纯代码能跑通的方案（如 HTML5/Godot 工程文件/纯 Kotlin 逻辑），不要声称能在这里编译 APK。")
+        appendLine("8. 回答要完整：结论 → 关键点（分条，必要时用表格）→ 文件清单 → 下一步。禁止半截话、禁止把过程塞成一大段，也不要只丢一句「已完成」。")
+        appendLine("9. 排版用标准 Markdown（标题、列表、表格、代码块）；不要在正文里堆 ** 星号做装饰。")
+        appendLine("10. 技能可以扩展：缺规范时用 skill_install 从远端 .md 或 skills-index.json 注入到当前工作区，注入后读一遍再用。")
+        if (config.allowShell) {
+            appendLine("11. Termux 可用：termux_exec 能跑 shell（只允许在 Termux 自己的目录里操作，破坏性命令会被拦截）。需要环境信息时先用 termux_status 或 pkg list-installed 之类只读命令。")
+        } else {
+            appendLine("11. Termux 目前关闭（allowShell=false）：不要声称已经执行 shell，需要时让用户去设置页打开。")
+        }
         if (config.skillsGate) {
             appendLine("8. 技能闸门已开启：没读完技能说明时，写文件会被工具层直接拒绝。")
         }
@@ -349,12 +445,17 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
     }
 
-    private fun finishMessage(messageId: String, text: String, failure: String?) {
+    private fun finishMessage(messageId: String, text: String, failure: String?, toolCount: Int) {
         _ui.update { state ->
             state.copy(messages = state.messages.map { msg ->
                 if (msg.id == messageId) {
+                    val fallback = if (toolCount > 0) {
+                        "已执行 $toolCount 项操作，结果见上方步骤卡片。"
+                    } else {
+                        "本轮没有文本输出。"
+                    }
                     msg.copy(
-                        text = text.ifBlank { "（本轮无文本输出）" },
+                        text = text.ifBlank { fallback },
                         streaming = false,
                         error = failure,
                     )
