@@ -30,6 +30,8 @@ class ToolRegistry(
     private val onHostKeyLearned: (String) -> Unit = {},
 ) {
 
+    private val locks = DocLocks { runCatching { sandbox.workspace() }.getOrNull() }
+
     companion object {
         val LABELS = mapOf(
             "skills_index" to "读取技能总索引",
@@ -45,6 +47,9 @@ class ToolRegistry(
             "plan_set" to "更新任务计划",
             "config_info" to "查看运行配置",
             "skill_install" to "下载并注入技能",
+            "doc_lock" to "锁定文档",
+            "doc_unlock" to "解锁文档",
+            "doc_locks" to "查看锁定清单",
             "termux_status" to "检查 Termux 连接",
             "termux_exec" to "在 Termux 执行命令",
         )
@@ -82,6 +87,9 @@ class ToolRegistry(
                 "plan_set" -> planSet(args)
                 "config_info" -> configInfo()
                 "skill_install" -> skillInstall(args)
+                "doc_lock" -> docLock(args)
+                "doc_unlock" -> docUnlock(args)
+                "doc_locks" -> docLocks()
                 "termux_status" -> termuxStatus()
                 "termux_exec" -> termuxExec(args)
                 else -> ToolResult(false, "未知工具：$name")
@@ -190,15 +198,22 @@ class ToolRegistry(
         val content = args.optString("content")
         val append = args.optBoolean("append", false)
         val bytes = content.toByteArray(Charsets.UTF_8)
-        require(bytes.size <= Sandbox.MAX_WRITE_BYTES) { "单次写入上限 2MB，当前 ${humanSize(bytes.size.toLong())}" }
+        require(bytes.size <= Sandbox.MAX_WRITE_BYTES) {
+            "单次写入上限 4MB，当前 ${humanSize(bytes.size.toLong())}；长文件请分卷 append"
+        }
         val file = sandbox.resolveWrite(path)
         file.parentFile?.mkdirs()
         require(file.absolutePath != sandbox.workspace().absolutePath) { "不能把工作区根目录当文件写" }
+        val rel = sandbox.relative(file)
+        val override = args.optBoolean("override", false)
+        locks.check(rel, content, override)?.let { reason ->
+            return ToolResult(false, "写入被文档锁拦截：$reason")
+        }
         if (append) file.appendText(content) else file.writeText(content)
         val lines = content.count { it == '\n' } + 1
         return ToolResult(
             true,
-            "已写入 ${sandbox.relative(file)}",
+            "已写入 $rel",
             "bytes=${bytes.size}, lines=$lines, mode=${if (append) "append" else "overwrite"}"
         )
     }
@@ -333,6 +348,8 @@ class ToolRegistry(
             }
         }
 
+        skeletons(type, engine).forEach { (rel, content) -> touch(rel, content) }
+
         touch(
             "README.md",
             """
@@ -409,6 +426,17 @@ class ToolRegistry(
                 .toString()
         )
         skills.installTo(sandbox.workspace())
+        if (type == "writing" || type == "book" || type == "write" || type == "写作") {
+            listOf("style-guide.md", "world.md").forEach { rel ->
+                val f = File(dir, rel)
+                if (f.isFile) {
+                    locks.lock(
+                        sandbox.relative(f), f.readText(), emptyList(), false,
+                        "写作项目基线：文风/世界观已定稿，AI 不得擅自改写"
+                    )
+                }
+            }
+        }
         onProjectOpened(name)
 
         val tip = if (skillText.isNotBlank()) "\n\n已为该类型匹配技能 $skillName。" else ""
@@ -446,6 +474,496 @@ class ToolRegistry(
             appendLine("termuxHostKey: ${cfg.termuxHostKey.ifBlank { "未记录" }}")
         }
         return ToolResult(true, "运行配置（已脱敏）", payload)
+    }
+
+    // ---------------- 项目骨架 ----------------
+
+    private fun skeletons(type: String, engine: String): Map<String, String> = when (type) {
+        "writing", "book", "write", "写作" -> writingSkeleton()
+        "app", "web", "应用", "网页" -> appSkeleton()
+        else -> gameSkeleton(engine)
+    }
+
+    private fun gameSkeleton(engine: String): Map<String, String> = mapOf(
+        "src/Main.kt" to """
+package game
+
+import engine.GameLoop
+import engine.World
+import game.Scene
+
+// 入口：把引擎、世界、场景串起来
+fun main() {
+    val world = World()
+    val loop = GameLoop(world, targetFps = 60)
+    world.switch(Scene.Title())
+    loop.run()
+}
+""".trimIndent(),
+
+        "src/engine/GameLoop.kt" to """
+package engine
+
+/**
+ * 固定步长主循环：逻辑 60Hz，渲染跟随刷新率。
+ * 不用 sleep 卡帧，靠累计时间对齐，避免漂移。
+ */
+class GameLoop(private val world: World, private val targetFps: Int = 60) {
+    private var running = false
+
+    fun run() {
+        running = true
+        val step = 1000L / targetFps
+        var last = System.currentTimeMillis()
+        var acc = 0L
+
+        while (running) {
+            val now = System.currentTimeMillis()
+            val delta = (now - last).coerceAtMost(250L)
+            last = now
+            acc += delta
+
+            while (acc >= step) {
+                world.update(step / 1000f)
+                acc -= step
+            }
+            world.render(acc.toFloat() / step)
+        }
+    }
+
+    fun stop() { running = false }
+}
+""".trimIndent(),
+
+        "src/engine/World.kt" to """
+package engine
+
+/** 世界：持有实体表与当前场景，负责调度更新与渲染 */
+class World {
+    private val entities = mutableListOf<Entity>()
+    private var scene: Scene = Scene.Empty()
+
+    fun spawn(e: Entity): Entity { entities.add(e); return e }
+    fun despawn(e: Entity) { entities.remove(e) }
+
+    fun switch(next: Scene) {
+        scene.onExit()
+        scene = next
+        scene.onEnter(this)
+    }
+
+    fun update(dt: Float) {
+        scene.update(dt)
+        entities.forEach { it.update(dt) }
+    }
+
+    fun render(alpha: Float) {
+        scene.render(alpha)
+        entities.forEach { it.render(alpha) }
+    }
+}
+""".trimIndent(),
+
+        "src/engine/Entity.kt" to """
+package engine
+
+/** 实体：用 id 标识，行为由组件或子类决定 */
+open class Entity(val id: Long) {
+    var x: Float = 0f
+    var y: Float = 0f
+    var active: Boolean = true
+
+    open fun update(dt: Float) = Unit
+    open fun render(alpha: Float) = Unit
+}
+""".trimIndent(),
+
+        "src/engine/Scene.kt" to """
+package engine
+
+/** 场景基类：进入/退出/更新/渲染四个钩子 */
+open class Scene {
+    open fun onEnter(world: World) = Unit
+    open fun onExit() = Unit
+    open fun update(dt: Float) = Unit
+    open fun render(alpha: Float) = Unit
+
+    class Empty : Scene()
+}
+""".trimIndent(),
+
+        "src/engine/Input.kt" to """
+package engine
+
+/** 输入快照：只记录状态与边沿，渲染层直接查 */
+class Input {
+    private val held = HashSet<String>()
+    private val pressedOnce = HashSet<String>()
+
+    fun down(key: String) { held.add(key); pressedOnce.add(key) }
+    fun up(key: String) { held.remove(key) }
+    fun isDown(key: String) = key in held
+    fun justPressed(key: String) = key in pressedOnce
+    fun endFrame() { pressedOnce.clear() }
+}
+""".trimIndent(),
+
+        "src/engine/Renderer.kt" to """
+package engine
+
+/**
+ * 渲染接口：Android 侧用 Canvas 实现，桌面/测试用空实现。
+ * 引擎不直接依赖具体绘图 API，方便换皮。
+ */
+interface Renderer {
+    fun clear(color: Int)
+    fun drawRect(x: Float, y: Float, w: Float, h: Float, color: Int)
+    fun drawText(text: String, x: Float, y: Float, size: Float, color: Int)
+    fun present()
+}
+""".trimIndent(),
+
+        "src/engine/Assets.kt" to """
+package engine
+
+import java.io.File
+
+/** 资源加载：统一走 assets/，避免散落到源码里 */
+class Assets(private val root: File) {
+    fun bytes(rel: String): ByteArray = File(root, rel).readBytes()
+    fun text(rel: String): String = File(root, rel).readText()
+    fun exists(rel: String): Boolean = File(root, rel).isFile
+}
+""".trimIndent(),
+
+        "src/system/Config.kt" to """
+package system
+
+import java.io.File
+
+/**
+ * 运行时配置：只读加载 + 显式保存，避免到处改全局状态。
+ * 敏感字段（密钥）不要放这里，交给 Keystore 加密存储。
+ */
+class Config(private val file: File) {
+    private val map = LinkedHashMap<String, String>()
+
+    fun load() {
+        if (!file.isFile) return
+        file.readLines().forEach { line ->
+            val i = line.indexOf('=')
+            if (i > 0) map[line.substring(0, i).trim()] = line.substring(i + 1).trim()
+        }
+    }
+
+    operator fun get(key: String): String? = map[key]
+    operator fun set(key: String, value: String) { map[key] = value }
+
+    fun save() {
+        file.parentFile?.mkdirs()
+        file.writeText(map.entries.joinToString("
+") { (k, v) -> "" + k + "=" + v })
+    }
+}
+""".trimIndent(),
+
+        "src/system/SaveSystem.kt" to """
+package system
+
+import java.io.File
+
+/**
+ * 存档：JSON 落盘 + 临时文件原子替换，防止断电写坏。
+ * 版本号必须写进去，读档时做迁移。
+ */
+class SaveSystem(private val dir: File) {
+    fun save(slot: String, json: String) {
+        dir.mkdirs()
+        val tmp = File(dir, slot + ".tmp")
+        tmp.writeText(json)
+        val target = File(dir, slot + ".json")
+        if (target.exists()) target.delete()
+        tmp.renameTo(target)
+    }
+
+    fun load(slot: String): String? {
+        val f = File(dir, slot + ".json")
+        return if (f.isFile) f.readText() else null
+    }
+}
+""".trimIndent(),
+
+        "src/system/Logger.kt" to """
+package system
+
+import java.io.File
+
+/** 简易日志：按天切文件，超过 2MB 丢弃旧行，避免把存储写满 */
+class Logger(private val dir: File) {
+    fun info(tag: String, message: String) = write("I", tag, message)
+    fun warn(tag: String, message: String) = write("W", tag, message)
+    fun error(tag: String, message: String) = write("E", tag, message)
+
+    private fun write(level: String, tag: String, message: String) {
+        runCatching {
+            dir.mkdirs()
+            val f = File(dir, "app.log")
+            if (f.length() > 2_000_000L) f.writeText("")
+            f.appendText(level + "/" + tag + ": " + message + "
+")
+        }
+    }
+}
+""".trimIndent(),
+
+        "src/game/Scene.kt" to """
+package game
+
+import engine.Scene
+
+/** 标题场景：后续关卡场景照这个模板加 */
+class Title : Scene()
+""".trimIndent(),
+
+        "docs/data-model.md" to """
+# 数据模型
+
+| 对象 | 字段 | 类型 | 说明 |
+| --- | --- | --- | --- |
+| Player | hp / speed / x / y | Int / Float | 主角状态 |
+| Item | id / name / effect | String | 道具表，放 assets/data |
+| Save | version / slot / payload | Int / String | 存档必须有版本号 |
+
+## 约定
+- 数值一律用 Float，避免整数除法丢精度。
+- 表驱动：平衡性数据放 assets/data/*.json，不写死在代码里。
+""".trimIndent(),
+
+        "docs/tech.md" to """
+# 技术方案
+
+- 引擎：${engine.ifEmpty { "自研轻量 2D 引擎（src/engine）" }}
+- 主循环：GameLoop 固定步长 60Hz，渲染插值
+- 渲染：Renderer 接口抽象，Android 侧 Canvas 实现
+- 输入：Input 快照（按住 + 单帧边沿）
+- 存档：SaveSystem 原子写 + 版本迁移
+- 配置：assets/config/*.properties，密钥不进配置文件
+
+## 不做什么
+- 不引入重型引擎依赖，保证纯代码可读可改
+- 不承诺在本 App 内编译 APK；出包走 GitHub Actions 或 Termux
+""".trimIndent(),
+    )
+
+    private fun writingSkeleton(): Map<String, String> = mapOf(
+        "chapters/000-模板.md" to """
+# 第 1 章 章节标题
+
+## 场景一
+- 时间：
+- 地点：
+- 在场人物：
+
+正文从这里开始。一段只写一件事，动作优先于形容。
+
+## 场景二
+（转场要交代因果，不要硬切）
+
+---
+本章钩子：________
+""".trimIndent(),
+
+        "world.md" to """
+# 世界观基线
+
+## 一句话设定
+（用一句话说清世界规则，读者看完能复述）
+
+## 硬规则
+1. 物理/超自然规则：
+2. 技术上限：
+3. 社会结构：
+
+## 地理
+- 主舞台：
+- 边缘地带：
+
+## 禁忌
+- 不做无铺垫的能力升级
+- 不改动本章已锁定的硬规则（改动需先解锁）
+""".trimIndent(),
+
+        "cast/cast.md" to """
+# 人物表
+
+| 角色 | 身份 | 首次出场 | 角色卡 |
+| --- | --- | --- | --- |
+| 主角 | | 第 1 章 | characters/主角.md |
+| 对手 | | 第 3 章 | characters/对手.md |
+
+## 关系网
+- 主角 ↔ 对手：
+- 主角 ↔ 配角：
+""".trimIndent(),
+
+        "continuity.md" to """
+# 伏笔与连续性账本
+
+| 编号 | 伏笔/设定 | 埋设章节 | 回收章节 | 状态 |
+| --- | --- | --- | --- | --- |
+| F01 | | 第 2 章 | 待定 | 未回收 |
+| F02 | | 第 5 章 | 第 9 章 | 已回收 |
+
+## 时间线
+- 第 1 章：第 1 天
+- 第 2 章：第 1 天夜
+
+> 每写完一章回来登记，防止写到后面自相矛盾。
+""".trimIndent(),
+
+        "style-guide.md" to """
+# 文风约定（已锁定）
+
+- 视角：第三人称限知
+- 语体：短句为主，少用四字成语堆叠
+- 场景描写：动作 + 一个感官细节，不超过 3 行
+- 禁用词（防 AI 味）：「不禁」「彷佛」「仿佛」「这一切」「命运的齿轮」
+- 对话：一人一句，不加「他说道」以外的修饰
+
+## 节奏
+- 每 800 字一个信息增量
+- 章末必须有钩子
+
+> 本文件默认被文档锁保护。要改文风，先 doc_unlock，改完再 doc_lock。
+""".trimIndent(),
+
+        "docs/publishing.md" to """
+# 出版与导出
+
+## 导出顺序
+1. 章节合并 → export/full.md
+2. 目录生成（章号 + 章名）
+3. 转 Word/EPUB 时去掉 Markdown 标记
+
+## 校验
+- 章节编号连续，无跳号
+- 人物名一致（对照 cast.md）
+- 无占位符残留（TODO、____）
+""".trimIndent(),
+
+        "plan/todo.md" to """
+# 写作计划
+
+- [ ] 世界观与人物表定稿（锁 world.md / style-guide.md）
+- [ ] 大纲分卷
+- [ ] 第 1 章初稿
+- [ ] 第 1 章改稿（去 AI 味）
+- [ ] 伏笔账本登记
+""".trimIndent(),
+    )
+
+    private fun appSkeleton(): Map<String, String> = mapOf(
+        "src/main/App.kt" to """
+package app
+
+/** 应用入口：只做装配，不写业务 */
+fun main() {
+    val config = system.Config(java.io.File("config/app.properties")).apply { load() }
+    val router = Router()
+    router.register("/home", ::home)
+    router.go("/home")
+}
+
+private fun home() {
+    // TODO: 首页渲染
+}
+""".trimIndent(),
+
+        "src/main/Router.kt" to """
+package app
+
+/** 路由：路径 → 处理函数，避免页面互相直接调用 */
+class Router {
+    private val routes = LinkedHashMap<String, () -> Unit>()
+
+    fun register(path: String, handler: () -> Unit) { routes[path] = handler }
+    fun go(path: String) { routes[path]?.invoke() ?: error("未注册路由：" + path) }
+}
+""".trimIndent(),
+
+        "src/system/Storage.kt" to """
+package system
+
+import java.io.File
+
+/** 文件读写：统一 UTF-8，写前建目录，写后校验长度 */
+class Storage(private val root: File) {
+    fun read(rel: String): String = File(root, rel).readText()
+    fun write(rel: String, content: String): Int {
+        val f = File(root, rel)
+        f.parentFile?.mkdirs()
+        f.writeText(content)
+        return content.length
+    }
+}
+""".trimIndent(),
+
+        "docs/architecture.md" to """
+# 架构
+
+## 分层
+| 层 | 职责 | 目录 |
+| --- | --- | --- |
+| 入口 | 装配依赖、启动 | src/main/App.kt |
+| 路由 | 路径分发 | src/main/Router.kt |
+| 系统 | 存储/配置/日志 | src/system/ |
+| 业务 | 页面与数据 | src/feature/ |
+
+## 约束
+- 页面不直接 new 依赖，统一从装配处传入
+- 所有 IO 走 system.Storage，不散落 File 调用
+""".trimIndent(),
+    )
+
+    // ---------------- 文档锁 ----------------
+
+    private fun docLock(args: JSONObject): ToolResult {
+        val path = args.optString("path").trim()
+        require(path.isNotEmpty()) { "缺少参数 path" }
+        val file = sandbox.resolveWrite(path)
+        require(file.isFile) { "文件不存在：${sandbox.relative(file)}（先写内容再锁）" }
+        val rel = sandbox.relative(file)
+        val sections = args.optJSONArray("sections")?.let { arr ->
+            (0 until arr.length()).mapNotNull { arr.optString(it, "").takeIf { s -> s.isNotBlank() } }
+        } ?: emptyList()
+        val hard = args.optBoolean("hard", false)
+        val note = args.optString("note", "")
+        val message = locks.lock(rel, file.readText(), sections, hard, note)
+        return ToolResult(true, message, "path=$rel, hard=$hard, sections=${sections.joinToString()}")
+    }
+
+    private fun docUnlock(args: JSONObject): ToolResult {
+        val path = args.optString("path").trim()
+        require(path.isNotEmpty()) { "缺少参数 path" }
+        val file = sandbox.resolveWrite(path)
+        val unlocked = locks.unlock(sandbox.relative(file))
+        return ToolResult(
+            unlocked,
+            if (unlocked) "已解锁 ${sandbox.relative(file)}" else "这个文件本来就没上锁",
+        )
+    }
+
+    private fun docLocks(): ToolResult {
+        val entries = locks.list()
+        if (entries.isEmpty()) return ToolResult(true, "当前工作区没有锁定文档", "（空）")
+        return ToolResult(
+            true,
+            "共 ${entries.size} 个锁定文档",
+            entries.joinToString("\n") { e ->
+                val scope = if (e.hard) "硬锁" else if (e.sections.isEmpty()) "整篇保护" else "章节：" + e.sections.joinToString(" / ")
+                "- ${e.path} · $scope${if (e.note.isNotBlank()) " · ${e.note}" else ""}"
+            }
+        )
     }
 
     // ---------------- 技能注入 ----------------
@@ -637,6 +1155,27 @@ class ToolRegistry(
                 listOf("items")
             )
         )
+        arr.put(
+            fn(
+                "doc_lock",
+                "锁定文档（默认整篇保护；给了 sections 就只锁这些章节）。锁定后 AI 写入会被拦截，适合定稿的设定/正文章节。",
+                JSONObject()
+                    .put("path", prop("string", "相对工作区的文件路径"))
+                    .put("sections", prop("array", "要锁定的章节标题列表，可省略"))
+                    .put("hard", prop("boolean", "是否硬锁（禁止任何写入），默认 false"))
+                    .put("note", prop("string", "锁定原因，便于日后回顾")),
+                listOf("path")
+            )
+        )
+        arr.put(
+            fn(
+                "doc_unlock",
+                "解除文档锁。",
+                JSONObject().put("path", prop("string", "相对工作区的文件路径")),
+                listOf("path")
+            )
+        )
+        arr.put(fn("doc_locks", "列出当前工作区所有锁定文档与锁定范围。", JSONObject(), emptyList()))
         arr.put(
             fn(
                 "skill_install",
