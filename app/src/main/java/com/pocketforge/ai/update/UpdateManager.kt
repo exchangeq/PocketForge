@@ -32,6 +32,7 @@ class UpdateManager(
         val name: String,
         val notes: String,
         val apkUrl: String,
+        val assetApiUrl: String,
         val apkSize: Long,
         val htmlUrl: String,
     )
@@ -55,7 +56,9 @@ class UpdateManager(
 
     fun check(): CheckResult {
         val cfg = configProvider()
-        val repo = cfg.updateRepo.ifBlank { "exchangeq/PocketForge" }.trim().removePrefix("https://github.com/")
+        val repo = cfg.updateRepo.ifBlank { "exchangeq/PocketForge" }.trim()
+            .removePrefix("https://").removePrefix("http://")
+            .removePrefix("github.com/").removeSuffix(".git").trim('/')
         val current = currentVersion()
         return try {
             val conn: HttpURLConnection = URL("https://api.github.com/repos/$repo/releases/latest")
@@ -97,7 +100,7 @@ class UpdateManager(
             if (apkUrl.isBlank()) {
                 return CheckResult(false, current, null, "最新版 $tag 没找到 release APK")
             }
-            val release = ReleaseInfo(tag, name, notes, apkUrl, apkSize, html)
+            val release = ReleaseInfo(tag, name, notes, apkUrl, assetApiUrl, apkSize, html)
             val newer = compareVersion(tag.removePrefix("v"), current) > 0
             CheckResult(
                 upToDate = !newer,
@@ -120,15 +123,16 @@ class UpdateManager(
         val tmp = File(dir, "${release.tag}.part")
         tmp.delete()
 
-        val conn: HttpURLConnection = URL(release.apkUrl).openConnection() as HttpURLConnection
+        // 私有仓库的 browser_download_url 不带认证会 404；有 token 时优先走 assets API（octet-stream）
+        val useApi = cfg.githubToken.isNotBlank() && release.assetApiUrl.isNotBlank()
+        val targetUrl = if (useApi) release.assetApiUrl else release.apkUrl
+        val conn: HttpURLConnection = URL(targetUrl).openConnection() as HttpURLConnection
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15_000
         conn.readTimeout = 60_000
         conn.setRequestProperty("User-Agent", "PocketForge")
         conn.setRequestProperty("Accept", "application/octet-stream")
-        if (cfg.githubToken.isNotBlank() && release.apkUrl.contains("github.com")) {
-            conn.setRequestProperty("Authorization", "Bearer ${cfg.githubToken.trim()}")
-        }
+        if (useApi) conn.setRequestProperty("Authorization", "Bearer ${cfg.githubToken.trim()}")
         val code = conn.responseCode
         if (code !in 200..299) throw IllegalStateException("下载失败：HTTP $code")
         val total = conn.contentLengthLong.takeIf { it > 0 } ?: release.apkSize
@@ -214,14 +218,21 @@ class UpdateManager(
         return if (total > 0) "${mb(read)} / ${mb(total)}" else mb(read)
     }
 
+    /**
+     * 版本比较：只比数字，忽略字母、draft/beta/rc 等后缀。
+     * "v1.5.0-beta" → [1,5,0]，"1.4.0+2" → [1,4,0,2]，逐段比较，短的一方补 0。
+     */
+    private fun numbersOf(version: String): List<Int> =
+        Regex("[0-9]+").findAll(version).map { it.value.toIntOrNull() ?: 0 }.toList()
+
     private fun compareVersion(a: String, b: String): Int {
-        val pa = a.split('.', '-').mapNotNull { it.toIntOrNull() }
-        val pb = b.split('.', '-').mapNotNull { it.toIntOrNull() }
+        val pa = numbersOf(a)
+        val pb = numbersOf(b)
         val size = maxOf(pa.size, pb.size)
         for (i in 0 until size) {
             val x = pa.getOrElse(i) { 0 }
             val y = pb.getOrElse(i) { 0 }
-            if (x != y) return x - y
+            if (x != y) return if (x > y) 1 else -1
         }
         return 0
     }
