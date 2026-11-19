@@ -30,6 +30,9 @@ data class AppConfig(
     val termuxKey: String = "",
     val termuxPassphrase: String = "",
     val termuxHostKey: String = "",
+    // 发行版远程更新 + GitHub 访问
+    val updateRepo: String = "exchangeq/PocketForge",
+    val githubToken: String = "",
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -56,6 +59,8 @@ data class AppConfig(
         put("termuxKey", termuxKey)
         put("termuxPassphrase", termuxPassphrase)
         put("termuxHostKey", termuxHostKey)
+        put("updateRepo", updateRepo)
+        put("githubToken", githubToken)
     }
 
     fun endpoint(): String {
@@ -100,6 +105,8 @@ data class AppConfig(
             termuxKey = raw.optString("termuxKey", ""),
             termuxPassphrase = raw.optString("termuxPassphrase", ""),
             termuxHostKey = raw.optString("termuxHostKey", ""),
+            updateRepo = raw.optString("updateRepo", "exchangeq/PocketForge"),
+            githubToken = raw.optString("githubToken", ""),
         )
     }
 }
