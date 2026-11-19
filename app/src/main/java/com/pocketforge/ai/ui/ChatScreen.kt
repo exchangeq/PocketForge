@@ -1,12 +1,25 @@
 package com.pocketforge.ai.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,21 +29,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,9 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.data.MsgUi
@@ -84,30 +92,13 @@ fun ChatScreen(
         if (!hasStorage) StorageBanner(onRequestStorage)
         PlanCard(state.plan)
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (state.skillsLoaded) "技能已载入 · 可开工" else "技能未载入 · 首次写入会自动拦截",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (state.skillsLoaded) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = onClear) { Text("清空会话", fontSize = 12.sp) }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
             state = listState,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (state.messages.isEmpty()) {
                 item { EmptyHint(onPick = { input = it }) }
@@ -115,15 +106,25 @@ fun ChatScreen(
             items(state.messages, key = { it.id }) { message ->
                 MessageRow(message)
             }
-        }
-
-        if (state.busy) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            item {
+                if (state.messages.isNotEmpty() && !state.busy) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        TextButton(onClick = onClear) {
+                            Text("清空本会话", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
         }
 
         state.lastError?.let { ErrorBanner(it, onOpenSettings) }
 
-        InputBar(
+        Composer(
             value = input,
             onValueChange = { input = it },
             busy = state.busy,
@@ -141,28 +142,31 @@ fun ChatScreen(
 
 @Composable
 private fun SetupCard(onOpenSettings: () -> Unit) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(12.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Text(
-                "先连上模型，才能开工",
+                "还没连上模型",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
+            Spacer(Modifier.height(4.dp))
             Text(
-                "① 设置页填 Base URL（到 /v1）② 填 API Key ③ 点「测试连接」\n④ 授予「所有文件访问」后就能读写手机目录",
+                "设置页填 Base URL（到 /v1）和 API Key，点「测试连接」；再去系统里授予「所有文件访问」，就能读写手机目录。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                lineHeight = 18.sp,
-                modifier = Modifier.padding(top = 4.dp),
+                lineHeight = 19.sp,
             )
-            TextButton(onClick = onOpenSettings) { Text("去设置") }
+            Spacer(Modifier.height(2.dp))
+            TextButton(onClick = onOpenSettings, contentPadding = PaddingValues(0.dp)) {
+                Text("去设置 →", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
         }
     }
 }
@@ -172,57 +176,76 @@ private fun ErrorBanner(message: String, onOpenSettings: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(10.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.errorContainer,
     ) {
         Row(
-            Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "⚠ $message",
-                style = MaterialTheme.typography.labelSmall,
+                message,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.weight(1f),
                 maxLines = 3,
             )
-            TextButton(onClick = onOpenSettings) { Text("设置", fontSize = 12.sp) }
+            TextButton(onClick = onOpenSettings) {
+                Text("设置", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
         }
     }
 }
 
 @Composable
 private fun EmptyHint(onPick: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("PocketForge", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            modifier = Modifier.size(52.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primary,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("PF", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("想让它做什么？", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(6.dp))
         Text(
-            "说一句目标就行，AI 会先读技能说明，再建目录、分步写文件",
+            "说一句目标，它会先读技能说明，再建目录、分步写文件。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 18.sp,
+            lineHeight = 19.sp,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(18.dp))
         QUICK_PROMPTS.forEach { prompt ->
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 3.dp)
+                    .padding(vertical = 4.dp)
                     .clickable { onPick(prompt) },
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-                Text(
-                    prompt,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Row(
+                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        prompt,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("填入", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
-            "技能闸门开启时：没读技能就写文件，会被工具层直接拒绝",
+            "技能闸门开启：没读技能就写文件会被直接拒绝",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -232,53 +255,113 @@ private fun EmptyHint(onPick: (String) -> Unit) {
 @Composable
 private fun MessageRow(message: MsgUi) {
     val isUser = message.role == "user"
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = if (isUser) 36.dp else 0.dp, end = if (isUser) 0.dp else 20.dp),
-        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-    ) {
-        if (message.steps.isNotEmpty()) {
-            Column(Modifier.fillMaxWidth()) {
-                message.steps.forEachIndexed { index, step ->
-                    StepCard(index + 1, step)
-                    Spacer(Modifier.height(4.dp))
+    Column(Modifier.fillMaxWidth()) {
+        if (isUser) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+                    modifier = Modifier.fillMaxWidth(0.86f),
+                ) {
+                    Text(
+                        message.text,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                 }
             }
+            return@Column
         }
-        if (message.text.isNotBlank()) {
-            Surface(
-                color = if (isUser) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                SelectionContainer {
+
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Avatar()
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                if (message.steps.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        message.steps.forEachIndexed { index, step ->
+                            StepCard(index + 1, step)
+                        }
+                    }
+                    if (message.text.isNotBlank() || message.streaming) {
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                if (message.text.isNotBlank()) {
+                    SelectionContainer {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            MarkdownText(
+                                source = message.text,
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                }
+                if (message.streaming) {
+                    Row(
+                        Modifier.padding(top = if (message.text.isBlank()) 2.dp else 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TypingDots()
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "正在生成",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                message.error?.let {
                     Text(
-                        text = message.text,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp,
+                        it,
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
         }
-        if (message.streaming) {
-            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "思考中…",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    }
+}
+
+@Composable
+private fun Avatar() {
+    Surface(
+        modifier = Modifier.size(26.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primary,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text("AI", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
-        message.error?.let {
-            Text(
-                "⚠ $it",
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
+    }
+}
+
+@Composable
+private fun TypingDots() {
+    val transition = rememberInfiniteTransition(label = "typing")
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        repeat(3) { index ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(520, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = StartOffset(index * 160),
+                ),
+                label = "dot$index",
+            )
+            Box(
+                Modifier
+                    .size(5.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha), CircleShape)
             )
         }
     }
@@ -289,7 +372,7 @@ private fun StepCard(index: Int, step: StepUi) {
     var expanded by remember(step.id) { mutableStateOf(false) }
     val statusColor = when (step.status) {
         StepStatus.RUNNING -> MaterialTheme.colorScheme.primary
-        StepStatus.OK -> Color(0xFF4FD1C5)
+        StepStatus.OK -> Color(0xFF10B981)
         StepStatus.FAILED -> MaterialTheme.colorScheme.error
     }
     val statusText = when (step.status) {
@@ -297,55 +380,81 @@ private fun StepCard(index: Int, step: StepUi) {
         StepStatus.OK -> "完成"
         StepStatus.FAILED -> "失败"
     }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(10.dp),
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Column(
-            Modifier
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$index", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    step.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(statusText, fontSize = 11.sp, color = statusColor)
-                Spacer(Modifier.width(6.dp))
-                Text(if (expanded) "收起" else "展开", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-            }
-            AnimatedVisibility(visible = expanded) {
-                Column(Modifier.padding(top = 6.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(statusColor)
+            )
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "参数",
-                        style = MaterialTheme.typography.labelSmall,
+                        "步骤 %02d".format(index),
+                        fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        step.args,
-                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
-                        lineHeight = 15.sp,
-                        modifier = Modifier.padding(bottom = 6.dp),
                     )
-                    if (step.output.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        step.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = statusColor.copy(alpha = 0.12f),
+                    ) {
                         Text(
-                            "输出",
-                            style = MaterialTheme.typography.labelSmall,
+                            statusText,
+                            fontSize = 10.sp,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (expanded) "收起" else "展开",
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                AnimatedVisibility(visible = expanded) {
+                    Column(Modifier.padding(top = 8.dp)) {
+                        Text(
+                            "参数",
+                            fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            step.output,
+                            step.args,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
-                            lineHeight = 15.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.padding(bottom = 6.dp),
                         )
+                        if (step.output.isNotBlank()) {
+                            Text(
+                                "输出",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                step.output,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 16.sp,
+                            )
+                        }
                     }
                 }
             }
@@ -354,45 +463,81 @@ private fun StepCard(index: Int, step: StepUi) {
 }
 
 @Composable
-private fun InputBar(
+private fun Composer(
     value: String,
     onValueChange: (String) -> Unit,
     busy: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("描述目标，AI 先读技能再动手…", fontSize = 13.sp) },
-                maxLines = 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            )
-            Spacer(Modifier.width(6.dp))
-            if (busy) {
-                IconButton(onClick = onStop) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "停止",
-                        tint = MaterialTheme.colorScheme.error,
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+        Column {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        maxLines = 5,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { innerTextField ->
+                            Box {
+                                if (value.isEmpty()) {
+                                    Text(
+                                        "描述目标，AI 会先读技能再动手…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
                     )
                 }
-            } else {
-                IconButton(onClick = onSend, enabled = value.isNotBlank()) {
-                    Icon(
-                        Icons.Default.Send,
-                        contentDescription = "发送",
-                        tint = if (value.isNotBlank()) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clickable { if (busy) onStop() else if (value.isNotBlank()) onSend() },
+                    shape = CircleShape,
+                    color = if (busy) MaterialTheme.colorScheme.errorContainer
+                    else if (value.isNotBlank()) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (busy) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "停止",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Send,
+                                contentDescription = "发送",
+                                tint = if (value.isNotBlank()) Color.White
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
