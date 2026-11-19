@@ -10,6 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
@@ -53,34 +56,50 @@ class KeepAliveService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val renew = object : Runnable {
+        override fun run() {
+            acquireLocks()
+            handler.postDelayed(this, 9 * 60 * 1000L)
+        }
+    }
+
+    private fun acquireLocks() {
+        runCatching {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (wakeLock?.isHeld != true) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PocketForge::keepalive").apply {
+                    setReferenceCounted(false)
+                    acquire(15 * 60 * 1000L)
+                }
+            }
+            if (wifiLock?.isHeld != true) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "PocketForge::wifi").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification("PocketForge 后台常驻中"))
-        runCatching {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PocketForge::keepalive").apply {
-                setReferenceCounted(false)
-                acquire(10 * 60 * 1000L)
-            }
-        }
+        acquireLocks()
+        handler.postDelayed(renew, 9 * 60 * 1000L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_RESTART) {
             startForeground(NOTIFICATION_ID, buildNotification("PocketForge 后台常驻中"))
         }
-        // 唤醒锁到期前续租，避免长任务跑一半被休眠
-        runCatching {
-            if (wakeLock?.isHeld == false || wakeLock == null) {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PocketForge::keepalive").apply {
-                    setReferenceCounted(false)
-                    acquire(10 * 60 * 1000L)
-                }
-            }
-        }
+        // 每次被拉回都续租唤醒锁与 WiFi 锁，避免长任务跑一半被休眠/断网
+        acquireLocks()
+        handler.removeCallbacks(renew)
+        handler.postDelayed(renew, 9 * 60 * 1000L)
         return START_STICKY
     }
 
@@ -99,8 +118,11 @@ class KeepAliveService : Service() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
         runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
+        runCatching { wifiLock?.let { if (it.isHeld) it.release() } }
         wakeLock = null
+        wifiLock = null
         super.onDestroy()
     }
 
