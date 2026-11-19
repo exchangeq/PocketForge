@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "updated": "2026-11-19",
   "count": 47,
   "skills": [
@@ -216,8 +216,8 @@
     {
       "name": "remote-update.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/remote-update.md",
-      "sha256": "98c5f0a1018a72218adf2c3f774c7049c98f8b841bc1b76ceedc949cea016b4e",
-      "bytes": 1357
+      "sha256": "d04f4b0e0ac8356086e16af73b98531a825bf03de8d57f1a6026945a9e3053d7",
+      "bytes": 1651
     },
     {
       "name": "roadmap-planning.md",
