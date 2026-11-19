@@ -50,8 +50,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -313,6 +315,25 @@ private fun MessageRow(message: MsgUi) {
                         Text(
                             "正在生成",
                             style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (message.text.isNotBlank() && !message.streaming) {
+                    val clipboard = LocalClipboardManager.current
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(
+                            "复制",
+                            fontSize = 10.5.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clickable { clipboard.setText(AnnotatedString(message.text)) }
+                                .padding(horizontal = 2.dp, vertical = 2.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "${message.text.length} 字",
+                            fontSize = 10.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
