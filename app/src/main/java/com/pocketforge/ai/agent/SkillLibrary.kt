@@ -70,6 +70,8 @@ class SkillLibrary(private val context: Context) {
             "git-workflow.md" to "版本管理与提交规范",
             "accessibility-i18n.md" to "无障碍与多语言",
             "data-viz.md" to "数据可视化选型",
+            "quality-output.md" to "高质量输出：自检清单与反 AI 味",
+            "document-ingest.md" to "读取用户上传文档：分段与事实清单",
         )
 
         const val FORCE_MARK = ".force"
