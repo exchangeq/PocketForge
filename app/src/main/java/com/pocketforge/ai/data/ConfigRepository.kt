@@ -38,9 +38,13 @@ class ConfigRepository(private val context: Context) {
         AppConfig()
     }
 
-    fun save(config: AppConfig) {
+    fun save(config: AppConfig): Boolean = try {
         CryptoBox.sealToFile(file, config.toJson().toString().toByteArray(Charsets.UTF_8))
         _config.value = config
+        true
+    } catch (t: Throwable) {
+        Log.e("ConfigRepository", "配置加密保存失败（Keystore 不可用？）", t)
+        false
     }
 
     fun keyFingerprint(): String = CryptoBox.keyFingerprint()
