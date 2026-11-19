@@ -1,13 +1,13 @@
 {
-  "version": 5,
+  "version": 6,
   "updated": "2026-11-19",
-  "count": 47,
+  "count": 51,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "c5665bfecf11c706e277af9a811da9f2292ab28fc0f2c6dc33dc2488f5752c34",
-      "bytes": 7892
+      "sha256": "ff9ae75eb61fdb3cfad6f3e29afc514b9fdd6cae239ab5c37aef1ecfc8d20687",
+      "bytes": 8074
     },
     {
       "name": "accessibility-i18n.md",
@@ -76,6 +76,12 @@
       "bytes": 713
     },
     {
+      "name": "content-quality.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/content-quality.md",
+      "sha256": "ea09a8733eb82fd3a316d696261dacb8ddd8073424cbae65461e1fda1432fb20",
+      "bytes": 2019
+    },
+    {
       "name": "copywriting.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/copywriting.md",
       "sha256": "11ea4dc2e97f2e89f1816e2e7eeec409ceb1b766c87d67ecffcb42d2ecde6d89",
@@ -104,6 +110,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/docs-lock.md",
       "sha256": "ecf8169a83c03118925c72eaa3f4afb7815e34946ba736f0f78bda6707ae5aa2",
       "bytes": 1021
+    },
+    {
+      "name": "document-ingest.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/document-ingest.md",
+      "sha256": "ef909392dff9532d4c0e2db7a1abffed280a074c0d5b164b01dc3055fa0330ad",
+      "bytes": 1630
     },
     {
       "name": "editing.md",
@@ -202,6 +214,12 @@
       "bytes": 583
     },
     {
+      "name": "quality-output.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/quality-output.md",
+      "sha256": "322efaafe7ec2ec5a7fbb132cef1482b0cc151bb03bc063807fc359a1a2ae319",
+      "bytes": 2468
+    },
+    {
       "name": "refactor.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/refactor.md",
       "sha256": "40cf2cff89727fb65f2c922c136b2117d029a025bfc230280c332f4680c517d5",
@@ -272,6 +290,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/ui-design.md",
       "sha256": "4ef7c1b7776d6a9ea841313896a970538a63a9080466bb4037197edab15c69a6",
       "bytes": 942
+    },
+    {
+      "name": "user-docs.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/user-docs.md",
+      "sha256": "df7c87ed337f8647c0a3ac6296007b75382a92c84fbee24646f6018b3f127711",
+      "bytes": 1424
     },
     {
       "name": "worldbuilding.md",
