@@ -53,6 +53,9 @@ class AiClient {
                 put("temperature", config.temperature)
                 put("stream", config.stream)
                 put("max_tokens", config.maxTokens)
+                if (config.reasoningEffort != "off") {
+                    put("reasoning_effort", if (config.reasoningEffort == "max") "high" else config.reasoningEffort)
+                }
                 if (tools != null && tools.length() > 0) {
                     put("tools", tools)
                     put("tool_choice", "auto")
