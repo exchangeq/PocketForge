@@ -62,6 +62,8 @@ fun ProjectScreen(
     onUnlock: (String) -> String,
     onPickFiles: () -> Unit = {},
     onProjectClick: (String) -> List<String> = { emptyList() },
+    onReadFile: (String) -> String = { "" },
+    onSaveFile: (String, String) -> String = { _, _ -> "" },
     onOpenChat: (String) -> String = { "" },
     onImportDocs: () -> Unit = {},
     onEnterProjectChat: (String, String) -> String = { _, _ -> "" },
@@ -82,6 +84,9 @@ fun ProjectScreen(
     var createResult by remember { mutableStateOf<String?>(null) }
     var fileList by remember { mutableStateOf<List<String>?>(null) }
     var fileListTitle by remember { mutableStateOf("") }
+    var editorPath by remember { mutableStateOf<String?>(null) }
+    var editorText by remember { mutableStateOf("") }
+    var editorTip by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier
@@ -505,6 +510,37 @@ fun ProjectScreen(
         )
     }
 
+    editorPath?.let { path ->
+        AlertDialog(
+            onDismissRequest = { editorPath = null },
+            title = { Text(path.substringAfterLast("/"), style = MaterialTheme.typography.titleSmall) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editorText,
+                        onValueChange = { editorText = it },
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+                        textStyle = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    )
+                    if (editorTip.isNotBlank()) {
+                        Text(editorTip, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        editorTip = withContext(Dispatchers.IO) { onSaveFile(path, editorText) }
+                        if (editorTip.startsWith("已保存")) {
+                            editorPath = null
+                        }
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editorPath = null }) { Text("关闭") } },
+        )
+    }
+
     fileList?.let { files ->
         AlertDialog(
             onDismissRequest = { fileList = null },
@@ -520,12 +556,29 @@ fun ProjectScreen(
                             Text("目录还是空的", style = MaterialTheme.typography.bodySmall)
                         } else {
                             files.forEach { path ->
-                                Text(
-                                    path,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    lineHeight = 17.sp,
-                                )
+                                val isDir = path.endsWith("/")
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable(enabled = !isDir) {
+                                            scope.launch {
+                                                val full = "projects/$fileListTitle/" + path.removeSuffix("/")
+                                                editorPath = full
+                                                editorTip = ""
+                                                editorText = withContext(Dispatchers.IO) { onReadFile(full) }
+                                            }
+                                        }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        path,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        lineHeight = 17.sp,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (!isDir) Text("编辑", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
