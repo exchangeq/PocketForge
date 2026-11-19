@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,9 +14,30 @@ android {
         applicationId = "com.pocketforge.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.6.0"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    // 固定签名：keystore/pocketforge.jks（不入仓库；CI 用 Secret 还原），口令来自 keystore.properties 或环境变量
+    val releaseStoreFile = rootProject.file("keystore/pocketforge.jks")
+    val ksProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val storePass = System.getenv("PF_KEYSTORE_PASSWORD") ?: ksProps.getProperty("storePassword") ?: ""
+    val keyPass = System.getenv("PF_KEY_PASSWORD") ?: ksProps.getProperty("keyPassword") ?: storePass
+    val keyAliasName = System.getenv("PF_KEY_ALIAS") ?: ksProps.getProperty("keyAlias") ?: "androiddebugkey"
+
+    signingConfigs {
+        create("release") {
+            if (releaseStoreFile.exists() && storePass.isNotEmpty()) {
+                storeFile = releaseStoreFile
+                storePassword = storePass
+                keyAlias = keyAliasName
+                keyPassword = keyPass
+            }
+        }
     }
 
     buildTypes {
@@ -26,7 +49,11 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseStoreFile.exists() && storePass.isNotEmpty()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
