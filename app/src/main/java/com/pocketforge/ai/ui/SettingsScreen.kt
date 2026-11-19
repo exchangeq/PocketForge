@@ -61,15 +61,19 @@ fun SettingsScreen(
     onCheckUpdate: suspend () -> String = { "" },
     onDownloadInstall: suspend ((Int, String) -> Unit) -> String = { "未接入" },
     onOpenUrl: (String) -> Unit = {},
+    onStorageUsage: () -> String = { "" },
+    onClearCache: () -> String = { "" },
 ) {
     val scope = rememberCoroutineScope()
 
     var permReport by remember { mutableStateOf("") }
+    var usage by remember { mutableStateOf("") }
     var checkResult by remember { mutableStateOf("") }
     var checking by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         permReport = withContext(Dispatchers.IO) { permissionReport() }
+        usage = withContext(Dispatchers.IO) { onStorageUsage() }
     }
 
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
@@ -577,7 +581,24 @@ fun SettingsScreen(
                 InfoLine("技能源", skillRepoUrl.ifBlank { "内置" })
                 InfoLine("Termux", "${tUser.ifBlank { "未配置" }}@${tHost.ifBlank { "127.0.0.1" }}:${tPort.ifBlank { "8022" }}")
                 InfoLine("更新源", updateRepo.ifBlank { "exchangeq/PocketForge" })
+                InfoLine("占用", usage.ifBlank { "统计中…" })
             }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextButton(
+                contentPadding = PaddingValues(horizontal = 6.dp),
+                onClick = {
+                    scope.launch {
+                        val msg = withContext(Dispatchers.IO) { onClearCache() }
+                        usage = withContext(Dispatchers.IO) { onStorageUsage() }
+                        savedTip = msg
+                    }
+                },
+            ) { Text("清理缓存") }
+            TextButton(
+                contentPadding = PaddingValues(horizontal = 6.dp),
+                onClick = { scope.launch { usage = withContext(Dispatchers.IO) { onStorageUsage() } } },
+            ) { Text("刷新占用") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(
