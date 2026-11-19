@@ -10,12 +10,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,7 +38,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.collectAsState
 import com.pocketforge.ai.agent.AgentEngine
 import com.pocketforge.ai.data.ConfigRepository
 import kotlinx.coroutines.delay
@@ -54,54 +56,79 @@ fun AppRoot() {
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { hasStorage = engine.hasAllFilesAccess() }
+    ) {
+        hasStorage = engine.hasAllFilesAccess()
+        projects = engine.projectNames()
+    }
 
     LaunchedEffect(Unit) {
         projects = engine.projectNames()
         while (true) {
             hasStorage = engine.hasAllFilesAccess()
-            delay(1500)
+            delay(1200)
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    val hasKey = config.apiKey.isNotBlank()
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .imePadding()
+    ) {
         Header(
             projectName = state.projectName,
             busy = state.busy,
-            encrypted = config.apiKey.isNotEmpty(),
+            hasKey = hasKey,
+            onOpenSettings = { tab = 2 },
         )
 
-        when (tab) {
-            0 -> ChatScreen(
-                state = state,
-                hasStorage = hasStorage,
-                onRequestStorage = {
-                    requestAllFilesAccess(context) { legacyPermissionLauncher.launch(it) }
-                    hasStorage = engine.hasAllFilesAccess()
-                },
-                onSend = { engine.send(it) },
-                onStop = { engine.stop() },
-                onClear = { engine.clearSession() },
-            )
-            1 -> ProjectScreen(
-                workspacePath = engine.workspacePath(),
-                projects = projects,
-                skills = engine.skillEntries(),
-                onRefresh = { projects = engine.projectNames() },
-                onCreate = { name, type, engineName -> engine.createProject(name, type, engineName).summary },
-                onSkillClick = { engine.skillText(it) },
-            )
-            else -> SettingsScreen(
-                config = config,
-                workspacePath = engine.workspacePath(),
-                fingerprint = engine.keyFingerprint(),
-                encryptedAtRest = engine.encryptedAtRest(),
-                hasStorage = hasStorage,
-                onSave = { engine.saveConfig(it) },
-                onTest = { engine.testConnection() },
-                onInstallSkills = { engine.installSkills() },
-                onClear = { engine.clearSession() },
-            )
+        // 关键：内容区必须用 weight，否则 fillMaxSize 会吃掉底部导航的高度
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            when (tab) {
+                0 -> ChatScreen(
+                    state = state,
+                    hasStorage = hasStorage,
+                    hasApiKey = hasKey,
+                    onRequestStorage = {
+                        requestAllFilesAccess(context) { legacyPermissionLauncher.launch(it) }
+                    },
+                    onSend = { engine.send(it) },
+                    onStop = { engine.stop() },
+                    onClear = { engine.clearSession() },
+                    onOpenSettings = { tab = 2 },
+                )
+                1 -> ProjectScreen(
+                    workspacePath = engine.workspacePath(),
+                    projects = projects,
+                    skills = engine.skillEntries(),
+                    onRefresh = { projects = engine.projectNames() },
+                    onCreate = { name, type, engineName ->
+                        engine.createProject(name, type, engineName).summary
+                    },
+                    onSkillClick = { engine.skillText(it) },
+                )
+                else -> SettingsScreen(
+                    config = config,
+                    workspacePath = engine.workspacePath(),
+                    fingerprint = engine.keyFingerprint(),
+                    encryptedAtRest = engine.encryptedAtRest(),
+                    hasStorage = hasStorage,
+                    onSave = { engine.saveConfig(it) },
+                    onTest = { engine.testConnection() },
+                    onInstallSkills = { engine.installSkills() },
+                    onClear = { engine.clearSession() },
+                    onRequestStorage = {
+                        requestAllFilesAccess(context) { legacyPermissionLauncher.launch(it) }
+                    },
+                    permissionReport = { engine.permissionReport() },
+                    selfCheck = { engine.storageSelfCheck() },
+                )
+            }
         }
 
         BottomTabs(current = tab, onSelect = { tab = it })
@@ -115,25 +142,32 @@ private fun requestAllFilesAccess(context: Context, legacy: (Array<String>) -> U
             Uri.parse("package:${context.packageName}")
         )
         if (runCatching { context.startActivity(intent) }.isSuccess) return
-        runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
-    } else {
-        legacy(
-            arrayOf(
-                android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                android.Manifest.permission.READ_EXTERNAL_STORAGE,
-            )
-        )
+        if (runCatching {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }.isSuccess
+        ) return
     }
+    legacy(
+        arrayOf(
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+        )
+    )
 }
 
 @Composable
-private fun Header(projectName: String, busy: Boolean, encrypted: Boolean) {
+private fun Header(
+    projectName: String,
+    busy: Boolean,
+    hasKey: Boolean,
+    onOpenSettings: () -> Unit,
+) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -146,13 +180,16 @@ private fun Header(projectName: String, busy: Boolean, encrypted: Boolean) {
                 }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = if (hasKey) MaterialTheme.colorScheme.surfaceVariant
+                    else MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.clickable(onClick = onOpenSettings),
                 ) {
                     Text(
-                        if (encrypted) "配置已加密" else "未配置密钥",
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (hasKey) "密钥已加密 · 设置 ›" else "未配置密钥 · 去填 ›",
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        color = if (hasKey) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -170,7 +207,7 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
-                .height(54.dp),
+                .height(52.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
@@ -178,7 +215,7 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
                 Column(
                     modifier = Modifier
                         .clickable { onSelect(index) }
-                        .padding(horizontal = 18.dp, vertical = 6.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
@@ -189,14 +226,13 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(2.dp))
-                    if (current == index) {
-                        Surface(
-                            modifier = Modifier
-                                .width(18.dp)
-                                .height(2.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                        ) {}
-                    }
+                    Surface(
+                        modifier = Modifier
+                            .width(18.dp)
+                            .height(2.dp),
+                        color = if (current == index) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surface,
+                    ) {}
                 }
             }
         }
