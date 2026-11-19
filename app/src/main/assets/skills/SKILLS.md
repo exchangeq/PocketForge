@@ -25,17 +25,78 @@
 
 | 用户想要 | 必读技能 | 典型产物 |
 | --- | --- | --- |
-| 游戏、可玩 demo、关卡、像素风 | `game-dev.md` | HTML5 / Godot 工程、设计文档、素材清单 |
-| 小说、剧本、设定集、公众号长文 | `writing.md` | 大纲、章节 markdown、角色卡 |
-| App 原型、网页、小工具 | `app-dev.md` | 单文件 HTML、前端工程骨架 |
+| 游戏、可玩 demo、关卡、像素风 | `game-dev.md` | 工程骨架、设计文档、素材清单 |
+| 自研引擎 / 主循环 / 渲染 | `engine-dev.md` | engine/ 目录、GameLoop |
+| 系统层（配置/日志/存档/权限） | `system-dev.md` | system/ 目录 |
+| 关卡与难度 | `level-design.md` | 关卡表、难度曲线 |
+| 数值平衡 | `balance-design.md` | balance.csv、模拟结论 |
+| 存档系统 | `save-load.md` | 存档结构、迁移函数 |
+| 像素美术 | `pixel-art.md` | 调色板、命名规范 |
+| 小说、书稿、连载 | `writing.md` → `longform-writing.md` | 大纲、章节、伏笔账本 |
+| 世界观 | `worldbuilding.md` | world.md（锁） |
+| 叙事结构 | `narrative-structure.md` | 幕/章节奏表 |
+| 剧本、对白 | `script-dialogue.md` | 场景表 |
+| 诗歌、歌词 | `poetry-lyrics.md` | 韵脚表 |
+| 角色卡、NPC 口吻 | `character-card.md` | character-*.md、cast.md |
+| 改稿、去 AI 味 | `editing.md` | 改稿对照 |
+| 文案、宣传 | `copywriting.md` | 标题/卖点/行动句 |
+| App 原型、网页、小工具 | `app-dev.md` | 前端工程骨架 |
+| 界面设计 | `ui-design.md` | 配色/字号/间距规范 |
+| 代码风格 | `kotlin-style.md` | 命名与惯用法 |
+| 数据建模 | `data-model.md` | 表结构、存档 JSON |
+| 接口 / 协议 | `api-protocol.md` | 请求体、工具调用格式 |
+| 安全 | `security.md` | 密钥/路径/注入检查 |
+| 测试 | `testing.md` | 分层用例 |
+| 排障 | `debugging.md` | 复现→二分→修因 |
+| 性能 | `performance.md` | 预算表、前后对比 |
+| 重构 | `refactor.md` | 护栏 + 小步清单 |
+| 资源管线 | `asset-pipeline.md` | manifest、命名 |
+| 图片处理 | `image-pipeline.md` | 尺寸/格式/压缩 |
+| 音频 | `audio.md` | BGM/SFX 目录 |
+| 数据图表 | `data-viz.md` | 选型表 |
+| 无障碍 / 多语言 | `accessibility-i18n.md` | 对比度、文案资源 |
+| 文档锁定 | `docs-lock.md` | 锁清单 |
+| 项目结构 | `project-structure.md` | 目录规范 |
+| 排期 | `roadmap-planning.md` | 里程碑 |
+| 验收 | `qa-checklist.md` | 检查项 |
+| 发版 | `release-checklist.md` + `android-build.md` | APK + 变更日志 |
+| Termux / 构建 | `termux.md` + `cli-build-termux.md` | SSH、gradle |
+| 版本管理 | `git-workflow.md` | 提交规范 |
 | 想改 API / 加密 / 数据流 | `runtime-config.md` | 配置说明、协议对照 |
-| 角色卡、剧本对白、NPC 口吻 | `character-card.md` | 角色文件、cast.md |
-| 要用 Termux 跑命令 | `termux.md` | SSH 连接、命令红线 |
 | 每次对答的措辞结构 | `answer-style.md` | 结论 / 关键点 / 文件 / 下一步 |
 | 每次对答的排版 | `markdown-style.md` | 标题层级、表格、代码块 |
 | 任何写入动作前 | `boundaries.md` | —— |
 
 跨类型时：读全部相关技能，按主类型建骨架，在 `PROJECT.md` 里写清“本项目同时遵循 X 与 Y”。
+
+### 2.0 技能总量
+
+本工作区共 **45 份**技能（`skills-index.json` 里有清单与 sha256）。**按需读 1~3 份**，不要全读；读与当前任务无关的技能等于浪费时间与上下文。
+
+### 2.2 长文本没有上限，但要分卷
+
+- `fs_write` 单次上限 4MB，但模型单轮输出有限，**长文件必须按卷写**。
+- 每卷 ≤ 300 行，用 `fs_write(path, content, append=true)` 追加。
+- 每写完一卷，`fs_read` 读回尾部 20 行确认没截断，再写下一卷。
+- 全部写完后做行数/章节号自检，把结果写进回复。
+- 禁止「一次硬塞整本书」，也不要留半截文件过夜。
+
+### 2.3 文档锁（定稿保护）
+
+| 调用 | 效果 | 场景 |
+| --- | --- | --- |
+| `doc_lock(path)` | 整篇软锁，覆盖需 `override=true` | 文风、世界观 |
+| `doc_lock(path, sections=["第 3 章"])` | 只锁指定章节，其余可续写 | 小说已定稿章 |
+| `doc_lock(path, hard=true)` | 硬锁，任何写入拒绝 | 合同、基线数据 |
+
+- 锁记录在 `<workspace>/.pocketforge/locks.json`，`doc_locks` 可查清单。
+- 写入被锁文件会被工具层直接拒绝；**要改先 `doc_unlock`，并在回复里说明**。
+- 写作项目建骨架时 `style-guide.md` / `world.md` 会自动上锁。
+
+### 2.4 推理强度
+
+设置页可选 **关 / 低 / 中 / 高 / 极高**，对应 `reasoning_effort`：关=直接给结论；低=最直接方案；中=一句话思路+自检一次；高/极高=先列 2~3 方案再选，写完自检两次（结构+事实）。
+
 
 ## 2.1 技能可以扩展（远程注入）
 
