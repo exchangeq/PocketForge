@@ -31,7 +31,13 @@ data class AppConfig(
         put("systemExtra", systemExtra)
     }
 
-    fun endpoint(): String = baseUrl.trim().trimEnd('/') + "/chat/completions"
+    fun endpoint(): String {
+        var base = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" }.trimEnd('/')
+        if (base.endsWith("/chat/completions")) return base
+        val path = base.substringAfter("://", base)
+        return if (path.contains("/v1")) "$base/chat/completions"
+        else "$base/v1/chat/completions"
+    }
 
     fun maskedKey(): String = when {
         apiKey.isEmpty() -> "未配置"
