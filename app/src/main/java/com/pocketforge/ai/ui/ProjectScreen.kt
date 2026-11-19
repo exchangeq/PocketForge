@@ -51,6 +51,7 @@ fun ProjectScreen(
     skills: List<Triple<String, String, Boolean>>,
     forced: Boolean,
     repoUrl: String,
+    locks: List<Pair<String, String>>,
     onRefresh: () -> Unit,
     onCreate: (String, String, String) -> String,
     onSkillClick: (String) -> String,
@@ -58,6 +59,7 @@ fun ProjectScreen(
     onRemoteInstall: (String, Boolean) -> String,
     onForceInject: () -> String,
     onDisableForce: () -> String,
+    onUnlock: (String) -> String,
 ) {
     val scope = rememberCoroutineScope()
     var showCreate by remember { mutableStateOf(false) }
@@ -70,6 +72,7 @@ fun ProjectScreen(
     var installUrl by remember { mutableStateOf("") }
     var forceInstall by remember { mutableStateOf(true) }
     var working by remember { mutableStateOf(false) }
+    var createResult by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -300,6 +303,59 @@ fun ProjectScreen(
             }
         }
 
+        item {
+            Column(Modifier.padding(top = 8.dp)) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                SectionTitle(
+                    "锁定文档",
+                    if (locks.isEmpty()) "定稿的设定/章节可以锁起来，AI 写入会被直接拒绝"
+                    else "共 ${locks.size} 个：写入被拦，需要改动先解锁"
+                )
+            }
+        }
+
+        items(locks) { (path, scopeText) ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(path, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        Text(
+                            scopeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    TextButton(
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        onClick = {
+                            scope.launch {
+                                message = withContext(Dispatchers.IO) { onUnlock(path) }
+                                onRefresh()
+                            }
+                        },
+                    ) { Text("解锁", fontSize = 11.5.sp) }
+                }
+            }
+        }
+
+        item {
+            if (locks.isEmpty()) {
+                Text(
+                    "在对话里说「把 world.md 锁定」，AI 会调 doc_lock。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         item { Spacer(Modifier.height(20.dp)) }
     }
 
@@ -352,14 +408,51 @@ fun ProjectScreen(
                     if (name.isNotEmpty()) {
                         showCreate = false
                         scope.launch {
-                            message = withContext(Dispatchers.IO) { onCreate(name, projectType, projectEngine.trim()) }
+                            val result = withContext(Dispatchers.IO) {
+                                onCreate(name, projectType, projectEngine.trim())
+                            }
                             projectName = ""
+                            message = "已创建 $name"
+                            createResult = result
                             onRefresh()
                         }
                     }
                 }) { Text("创建") }
             },
             dismissButton = { TextButton(onClick = { showCreate = false }) { Text("取消") } },
+        )
+    }
+
+    createResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { createResult = null },
+            title = {
+                val failed = result.contains("失败") || result.contains("拒绝") || result.contains("缺少")
+                Text(
+                    if (failed) "没有建成，原因如下" else "骨架已生成",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                SelectionContainer {
+                    Column(
+                        Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            result,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 18.sp,
+                            color = if (result.contains("失败") || result.contains("拒绝"))
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { createResult = null }) { Text("知道了") } },
         )
     }
 
