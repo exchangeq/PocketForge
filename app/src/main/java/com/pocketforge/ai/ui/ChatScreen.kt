@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.data.MsgUi
@@ -50,14 +53,22 @@ import com.pocketforge.ai.data.StepStatus
 import com.pocketforge.ai.data.StepUi
 import com.pocketforge.ai.data.UiState
 
+private val QUICK_PROMPTS = listOf(
+    "做个像素风横版小游戏，放到 projects 里",
+    "开一本 30 章的科幻长篇，先出大纲和世界观",
+    "看看我手机根目录里都有什么",
+)
+
 @Composable
 fun ChatScreen(
     state: UiState,
     hasStorage: Boolean,
+    hasApiKey: Boolean,
     onRequestStorage: () -> Unit,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onClear: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -69,6 +80,7 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
+        if (!hasApiKey) SetupCard(onOpenSettings)
         if (!hasStorage) StorageBanner(onRequestStorage)
         PlanCard(state.plan)
 
@@ -80,7 +92,7 @@ fun ChatScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (state.skillsLoaded) "技能已载入 · 可开工" else "技能未载入 · 写入会被拦",
+                if (state.skillsLoaded) "技能已载入 · 可开工" else "技能未载入 · 首次写入会自动拦截",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (state.skillsLoaded) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -94,11 +106,11 @@ fun ChatScreen(
                 .weight(1f)
                 .fillMaxWidth(),
             state = listState,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (state.messages.isEmpty()) {
-                item { EmptyHint() }
+                item { EmptyHint(onPick = { input = it }) }
             }
             items(state.messages, key = { it.id }) { message ->
                 MessageRow(message)
@@ -108,6 +120,8 @@ fun ChatScreen(
         if (state.busy) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
+
+        state.lastError?.let { ErrorBanner(it, onOpenSettings) }
 
         InputBar(
             value = input,
@@ -126,19 +140,89 @@ fun ChatScreen(
 }
 
 @Composable
-private fun EmptyHint() {
-    Column(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun SetupCard(onOpenSettings: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                "先连上模型，才能开工",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                "① 设置页填 Base URL（到 /v1）② 填 API Key ③ 点「测试连接」\n④ 授予「所有文件访问」后就能读写手机目录",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            TextButton(onClick = onOpenSettings) { Text("去设置") }
+        }
+    }
+}
+
+@Composable
+private fun ErrorBanner(message: String, onOpenSettings: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Row(
+            Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "⚠ $message",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+                maxLines = 3,
+            )
+            TextButton(onClick = onOpenSettings) { Text("设置", fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHint(onPick: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("PocketForge", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
-            "说一句目标就行：\n“做个像素风横版小游戏，放在工作区 projects 里”\n“开一本 30 章的科幻长篇，先把大纲和世界观定下来”",
+            "说一句目标就行，AI 会先读技能说明，再建目录、分步写文件",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 18.sp,
         )
         Spacer(Modifier.height(12.dp))
+        QUICK_PROMPTS.forEach { prompt ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .clickable { onPick(prompt) },
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Text(
+                    prompt,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
-            "AI 会先读技能说明 → 建目录 → 分步写文件，每步都能展开看",
+            "技能闸门开启时：没读技能就写文件，会被工具层直接拒绝",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -151,7 +235,7 @@ private fun MessageRow(message: MsgUi) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (isUser) 44.dp else 0.dp, end = if (isUser) 0.dp else 24.dp),
+            .padding(start = if (isUser) 36.dp else 0.dp, end = if (isUser) 0.dp else 20.dp),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
     ) {
         if (message.steps.isNotEmpty()) {
@@ -182,7 +266,11 @@ private fun MessageRow(message: MsgUi) {
             Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp)
                 Spacer(Modifier.width(6.dp))
-                Text("思考中…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "思考中…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         message.error?.let {
@@ -286,15 +374,25 @@ private fun InputBar(
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("描述目标，AI 先读技能再动手…", fontSize = 13.sp) },
                 maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
             )
             Spacer(Modifier.width(6.dp))
             if (busy) {
                 IconButton(onClick = onStop) {
-                    Icon(Icons.Default.Close, contentDescription = "停止", tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "停止",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
             } else {
                 IconButton(onClick = onSend, enabled = value.isNotBlank()) {
-                    Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "发送",
+                        tint = if (value.isNotBlank()) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
