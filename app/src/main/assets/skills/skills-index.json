@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "updated": "2026-11-19",
+  "skills": [
+    {
+      "name": "SKILLS.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
+      "sha256": "badb179b7ee2eb4489acee47ea25c659bed2282ab1c137e8b9bf51c30f7d68ac",
+      "bytes": 3106
+    },
+    {
+      "name": "answer-style.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/answer-style.md",
+      "sha256": "3bd323f71dcaa297c845a0bede8aad8dacb594ace50e67d5662722e5b3730c2e",
+      "bytes": 1754
+    },
+    {
+      "name": "app-dev.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/app-dev.md",
+      "sha256": "d3786116b973d1dc618bdd4e5ce189fc2f2ffc9e75fb0ecfd745400695feb269",
+      "bytes": 2563
+    },
+    {
+      "name": "boundaries.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/boundaries.md",
+      "sha256": "b295dd03be39f289f90c52eb5707a09304702a1998445ab12c6d1c820e68644a",
+      "bytes": 2845
+    },
+    {
+      "name": "character-card.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/character-card.md",
+      "sha256": "f1240296c67e537b60594c5db2aa338bc53c09a42d5ca07efae4d242a6247236",
+      "bytes": 2039
+    },
+    {
+      "name": "game-dev.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/game-dev.md",
+      "sha256": "833ad89bd5c9ddc4d224a2e6825294d1b06ad3603f9fc882f83202cfa83399ef",
+      "bytes": 3736
+    },
+    {
+      "name": "markdown-style.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/markdown-style.md",
+      "sha256": "4c0a8ad37bafc9a18fa9e954dc0fe228c59e2731b1645f58e23addd3de27aa43",
+      "bytes": 1701
+    },
+    {
+      "name": "runtime-config.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/runtime-config.md",
+      "sha256": "92a7770b234057421f72d79f244deb5ba4e20bbd45997f45e4ff66100f826394",
+      "bytes": 4307
+    },
+    {
+      "name": "termux.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/termux.md",
+      "sha256": "a4ca0586409645edaf95da9dcf2a75205456ceeeabbc1f60c216d3168d9928d5",
+      "bytes": 3340
+    },
+    {
+      "name": "writing.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/writing.md",
+      "sha256": "56d7353719f245d329cab8816d9fc87858c6d5f677859940d4b3a8f24272ccb8",
+      "bytes": 3431
+    }
+  ]
+}
