@@ -67,7 +67,8 @@ class AiClient {
             active = conn
             conn.requestMethod = "POST"
             conn.connectTimeout = 20_000
-            conn.readTimeout = 120_000
+            // 锁屏/弱网时流式分片间隔会变长，给足 240s，避免长回答被误判断流
+            conn.readTimeout = 240_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             conn.setRequestProperty("Accept", if (config.stream) "text/event-stream" else "application/json")
