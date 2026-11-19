@@ -69,8 +69,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
-    val repo = remember { ConfigRepository(context) }
-    val engine = remember { AgentEngine(context, repo) }
+    val app = context.applicationContext as com.pocketforge.ai.PocketForgeApp
+    val repo = app.configRepo
+    val engine = app.engine
     val state by engine.ui.collectAsState()
     val config by repo.config.collectAsState()
 
