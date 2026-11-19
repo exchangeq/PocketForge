@@ -262,6 +262,24 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         "已关闭强制注入，之后缺失的技能会回退到内置基线"
     }.getOrElse { "取消失败：${it.message}" }
 
+    fun lockedDocs(): List<Pair<String, String>> = runCatching {
+        val ws = sandbox.workspace()
+        DocLocks { ws }.list().map { entry ->
+            val scope = when {
+                entry.hard -> "硬锁"
+                entry.sections.isEmpty() -> "整篇保护"
+                else -> "章节：" + entry.sections.joinToString(" / ")
+            }
+            entry.path to scope
+        }
+    }.getOrDefault(emptyList())
+
+    fun unlockDoc(path: String): String = runCatching {
+        val rel = sandbox.relative(sandbox.resolveWrite(path))
+        val ok = DocLocks { sandbox.workspace() }.unlock(rel)
+        if (ok) "已解锁 $rel" else "这个文件本来就没上锁"
+    }.getOrElse { "解锁失败：${it.message}" }
+
     fun termuxTest(): String {
         val outcome = com.pocketforge.ai.termux.SshClient.test(configRepo.config.value)
         if (outcome.hostKeyLearned && outcome.fingerprint.isNotBlank()) {
@@ -276,6 +294,11 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     fun createProject(name: String, type: String, engine: String): ToolResult {
+        // 用户手动点「新建」＝已确认意图，这里补记技能读取，避免闸门把骨架拦在半路
+        indexRead = true
+        readSkills.add("SKILLS.md")
+        readSkills.add(runCatching { skills.skillFor(type) }.getOrDefault("game-dev.md"))
+        _ui.update { it.copy(skillsLoaded = true) }
         val args = JSONObject()
             .put("name", name)
             .put("type", type)
@@ -416,6 +439,15 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         appendLine("8. 回答要完整：结论 → 关键点（分条，必要时用表格）→ 文件清单 → 下一步。禁止半截话、禁止把过程塞成一大段，也不要只丢一句「已完成」。")
         appendLine("9. 排版用标准 Markdown（标题、列表、表格、代码块）；不要在正文里堆 ** 星号做装饰。")
         appendLine("10. 技能可以扩展：缺规范时用 skill_install 从远端 .md 或 skills-index.json 注入到当前工作区，注入后读一遍再用。")
+        when (config.reasoningEffort) {
+            "off" -> appendLine("12. 推理强度=关：直接给结论和动作，不写内心推演。")
+            "low" -> appendLine("12. 推理强度=低：先做最直接的方案，不比较备选。")
+            "high", "max" -> appendLine("12. 推理强度=高：动手前先列 2~3 个方案并选一个，写完后自检两次（结构 + 事实），再给结论。")
+            else -> appendLine("12. 推理强度=中：动手前花一句话说明思路，写完自检一次。")
+        }
+        appendLine("13. 长文本没有上限，但单次工具调用有 4MB 上限：长文件按「分卷 append」写，每卷 ≤ 300 行，写完读回尾部校验，禁止一次硬塞。")
+        appendLine("14. 文档锁：定稿的设定/章节可先 doc_lock（soft 默认，hard 全禁写）。写入被锁文件会被工具层拒绝，除非用户明确要求解锁。")
+        appendLine("15. 技能库很大（40+ 份），按需读，不要全读；读哪份由项目类型决定。")
         if (config.allowShell) {
             appendLine("11. Termux 可用：termux_exec 能跑 shell（只允许在 Termux 自己的目录里操作，破坏性命令会被拦截）。需要环境信息时先用 termux_status 或 pkg list-installed 之类只读命令。")
         } else {
