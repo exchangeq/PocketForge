@@ -1,5 +1,33 @@
 # 更新日志
 
+## v1.4.0（发行版远程更新 + 搜索增强 + 47 技能）
+
+**远程更新（应用内直接升级）**
+
+- 新模块 `update/UpdateManager.kt`：读 GitHub Releases latest → 比对版本 → 下载 release APK → 校验 → 拉起系统安装器。
+- 安全校验：包名必须一致 + 签名摘要必须与当前安装包一致，不符直接拒绝（防替换包）；只走 https/重定向跟随。
+- 设置页新增「远程更新」：显示当前版本、更新源（owner/repo）、GitHub 令牌（加密存储）、检查更新 / 下载并安装（带百分比进度）。
+- 新工具：`update_check` / `update_install`（仅用户明确要求时才调用）。
+- Manifest 增加 `REQUEST_INSTALL_PACKAGES` 与 FileProvider（`cache/update` 目录）。
+
+**GitHub 接入**
+
+- 新增 `githubToken` 配置（AES-256-GCM 落盘），用于私有仓库或 API 限流场景。
+- 设置页内置「生成令牌 →」链接，点开直接到 GitHub 令牌页：`https://github.com/settings/tokens/new?scopes=repo&description=PocketForge`。
+
+**搜索增强**
+
+- `fs_search` 支持 `scope=workspace|root`、`content=true`（默认）、`maxHits`，同时命中文件名与内容行号；根目录需「所有文件访问」权限，只读。
+- 新增技能 `file-search.md`：先文件名再内容，避免全盘 grep。
+
+**技能 45 → 47 份**
+
+- 新增 `remote-update.md`（版本对比/签名校验/失败对照）、`file-search.md`。
+- `skills-index.json` 升到 v4（47 条，含 sha256）。
+
+**包体**：release 12MB / debug 15MB，签名沿用 `a5d8a11…f4b40`。
+
+
 ## v1.3.0（骨架扩容 + 45 技能 + 文档锁 + 推理强度）
 
 **修掉「新建项目没反应」的真正原因**
