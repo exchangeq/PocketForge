@@ -53,7 +53,7 @@ fun ProjectScreen(
     repoUrl: String,
     locks: List<Pair<String, String>>,
     onRefresh: () -> Unit,
-    onCreate: (String, String, String) -> String,
+    onCreate: (String, String, String, String) -> String,
     onSkillClick: (String) -> String,
     onSyncBundled: () -> String,
     onRemoteInstall: (String, Boolean) -> String,
@@ -62,6 +62,7 @@ fun ProjectScreen(
     onUnlock: (String) -> String,
     onPickFiles: () -> Unit = {},
     onProjectClick: (String) -> List<String> = { emptyList() },
+    onEnterProjectChat: (String, String) -> String = { _, _ -> "" },
     notice: String = "",
 ) {
     val scope = rememberCoroutineScope()
@@ -69,6 +70,7 @@ fun ProjectScreen(
     var projectName by remember { mutableStateOf("") }
     var projectType by remember { mutableStateOf("game") }
     var projectEngine by remember { mutableStateOf("") }
+    var projectScale by remember { mutableStateOf("standard") }
     var message by remember { mutableStateOf("") }
     var skillContent by remember { mutableStateOf<String?>(null) }
     var skillTitle by remember { mutableStateOf("") }
@@ -418,8 +420,20 @@ fun ProjectScreen(
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("minimal" to "最小", "standard" to "标准", "full" to "完整").forEach { (key, label) ->
+                            TextButton(onClick = { projectScale = key }) {
+                                Text(
+                                    label,
+                                    color = if (projectScale == key) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (projectScale == key) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            }
+                        }
+                    }
                     Text(
-                        "会生成 README / PROJECT.md / AGENTS.md / plan 与技能副本。",
+                        "最小只建目录与三份说明；标准加设计文档；完整再加代码骨架。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
@@ -433,11 +447,12 @@ fun ProjectScreen(
                         showCreate = false
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
-                                onCreate(name, projectType, projectEngine.trim())
+                                onCreate(name, projectType, projectEngine.trim(), projectScale)
                             }
                             projectName = ""
                             projectEngine = ""
                             message = "已创建 $name"
+                            projectScale = "standard"
                             createResult = result
                             onRefresh()
                         }
@@ -507,7 +522,16 @@ fun ProjectScreen(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { fileList = null }) { Text("关闭") } },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = {
+                        val name = fileListTitle
+                        fileList = null
+                        if (name.isNotBlank()) message = onEnterProjectChat(name, name)
+                    }) { Text("进入项目对话") }
+                    TextButton(onClick = { fileList = null }) { Text("关闭") }
+                }
+            },
         )
     }
 
