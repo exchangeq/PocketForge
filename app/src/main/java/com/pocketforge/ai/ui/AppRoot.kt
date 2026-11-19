@@ -67,6 +67,7 @@ fun AppRoot() {
     var projects by remember { mutableStateOf(engine.projectNames()) }
     var skills by remember { mutableStateOf(engine.skillStatus()) }
     var forced by remember { mutableStateOf(engine.forceInjected()) }
+    var locks by remember { mutableStateOf(engine.lockedDocs()) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -79,6 +80,7 @@ fun AppRoot() {
         projects = engine.projectNames()
         skills = engine.skillStatus()
         forced = engine.forceInjected()
+        locks = engine.lockedDocs()
         while (true) {
             hasStorage = engine.hasAllFilesAccess()
             delay(1200)
@@ -126,9 +128,11 @@ fun AppRoot() {
                     skills = skills,
                     forced = forced,
                     repoUrl = config.skillRepoUrl,
+                    locks = locks,
                     onRefresh = {
                         projects = engine.projectNames()
                         skills = engine.skillStatus()
+                        locks = engine.lockedDocs()
                     },
                     onCreate = { name, type, engineName ->
                         engine.createProject(name, type, engineName).summary
@@ -155,6 +159,11 @@ fun AppRoot() {
                     onDisableForce = {
                         val result = engine.disableForceInject()
                         forced = engine.forceInjected()
+                        result
+                    },
+                    onUnlock = { path ->
+                        val result = engine.unlockDoc(path)
+                        locks = engine.lockedDocs()
                         result
                     },
                 )
