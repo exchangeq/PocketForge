@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,8 +35,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +76,8 @@ fun AppRoot() {
     var locks by remember { mutableStateOf(engine.lockedDocs()) }
     var notice by remember { mutableStateOf("") }
     var updateTag by remember { mutableStateOf<String?>(null) }
+    var showSessions by remember { mutableStateOf(false) }
+    var sessionList by remember { mutableStateOf<List<Triple<String, String, Int>>>(emptyList()) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -123,7 +131,45 @@ fun AppRoot() {
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            when (tab) {
+            if (showSessions) {
+            AlertDialog(
+                onDismissRequest = { showSessions = false },
+                title = { Text("对话页", style = MaterialTheme.typography.titleMedium) },
+                text = {
+                    Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                        sessionList.forEach { (key, title, count) ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clickable {
+                                        engine.switchSession(key)
+                                        showSessions = false
+                                    }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(title, fontSize = 14.sp, fontWeight = if (key == engine.currentSessionKey()) FontWeight.Bold else FontWeight.Normal)
+                                    Text("$count 条 · $key", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("进入", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
+                        sessionList = engine.sessions()
+                        showSessions = false
+                        tab = 0
+                    }) { Text("新建对话") }
+                },
+                dismissButton = { TextButton(onClick = { showSessions = false }) { Text("关闭") } },
+            )
+        }
+
+        when (tab) {
                 0 -> ChatScreen(
                     state = state,
                     hasStorage = hasStorage,
@@ -134,6 +180,18 @@ fun AppRoot() {
                     onSend = { engine.send(it) },
                     onStop = { engine.stop() },
                     onClear = { engine.clearSession() },
+                    onSwitchSession = {
+                        sessionList = engine.sessions()
+                        showSessions = true
+                    },
+                    onExport = {
+                        engine.onIo {
+                            val msg = engine.exportSession()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
                     onOpenSettings = { tab = 2 },
                 )
 
@@ -149,8 +207,10 @@ fun AppRoot() {
                         skills = engine.skillStatus()
                         locks = engine.lockedDocs()
                     },
-                    onCreate = { name, type, engineName ->
-                        engine.createProject(name, type, engineName).summary
+                    onCreate = { name, type, engineName, scale ->
+                        val r = engine.createProject(name, type, engineName, scale)
+                        val session = engine.ensureProjectSession(name)
+                        r.summary + "\n" + session
                     },
                     onSkillClick = { engine.skillText(it) },
                     onSyncBundled = {
@@ -187,6 +247,11 @@ fun AppRoot() {
                         )
                     },
                     onProjectClick = { name -> engine.projectFiles(name) },
+                    onEnterProjectChat = { _, name ->
+                        val msg = engine.enterProjectSessionByName(name)
+                        tab = 0
+                        msg
+                    },
                     notice = notice,
                 )
 
@@ -207,6 +272,8 @@ fun AppRoot() {
                     selfCheck = { engine.storageSelfCheck() },
                     onTermuxTest = { withContext(Dispatchers.IO) { engine.termuxTest() } },
                     onTrustHostKey = { engine.trustNewHostKey() },
+                    onStorageUsage = { engine.storageUsage() },
+                    onClearCache = { engine.clearCache() },
                     currentVersion = engine.currentVersion(),
                     onCheckUpdate = { withContext(Dispatchers.IO) { engine.checkUpdate() } },
                     onDownloadInstall = { onProgress ->
