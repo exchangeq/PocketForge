@@ -8,13 +8,26 @@ data class AppConfig(
     val apiKey: String = "",
     val model: String = "gpt-4o-mini",
     val temperature: Double = 0.4,
-    val maxTokens: Int = 2048,
+    val maxTokens: Int = 4096,
     val stream: Boolean = true,
     val workspaceRoot: String = "",
     val skillsGate: Boolean = true,
     val streamCipherKey: String = "",
-    val maxSteps: Int = 24,
+    val maxSteps: Int = 30,
     val systemExtra: String = "",
+    // 技能源：默认指向本仓库的 skills 目录，可换成自己的私有地址
+    val skillRepoUrl: String = "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills",
+    val skillRepoToken: String = "",
+    // Termux 桥接（SSH over 127.0.0.1:8022）
+    val allowShell: Boolean = false,
+    val termuxHost: String = "127.0.0.1",
+    val termuxPort: Int = 8022,
+    val termuxUser: String = "",
+    val termuxAuth: String = "password",
+    val termuxPassword: String = "",
+    val termuxKey: String = "",
+    val termuxPassphrase: String = "",
+    val termuxHostKey: String = "",
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -29,6 +42,17 @@ data class AppConfig(
         put("streamCipherKey", streamCipherKey)
         put("maxSteps", maxSteps)
         put("systemExtra", systemExtra)
+        put("skillRepoUrl", skillRepoUrl)
+        put("skillRepoToken", skillRepoToken)
+        put("allowShell", allowShell)
+        put("termuxHost", termuxHost)
+        put("termuxPort", termuxPort)
+        put("termuxUser", termuxUser)
+        put("termuxAuth", termuxAuth)
+        put("termuxPassword", termuxPassword)
+        put("termuxKey", termuxKey)
+        put("termuxPassphrase", termuxPassphrase)
+        put("termuxHostKey", termuxHostKey)
     }
 
     fun endpoint(): String {
@@ -51,13 +75,27 @@ data class AppConfig(
             apiKey = raw.optString("apiKey", ""),
             model = raw.optString("model", "gpt-4o-mini"),
             temperature = raw.optDouble("temperature", 0.4),
-            maxTokens = raw.optInt("maxTokens", 2048),
+            maxTokens = raw.optInt("maxTokens", 4096),
             stream = raw.optBoolean("stream", true),
             workspaceRoot = raw.optString("workspaceRoot", ""),
             skillsGate = raw.optBoolean("skillsGate", true),
             streamCipherKey = raw.optString("streamCipherKey", ""),
-            maxSteps = raw.optInt("maxSteps", 24),
+            maxSteps = raw.optInt("maxSteps", 30),
             systemExtra = raw.optString("systemExtra", ""),
+            skillRepoUrl = raw.optString(
+                "skillRepoUrl",
+                "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills"
+            ),
+            skillRepoToken = raw.optString("skillRepoToken", ""),
+            allowShell = raw.optBoolean("allowShell", false),
+            termuxHost = raw.optString("termuxHost", "127.0.0.1"),
+            termuxPort = raw.optInt("termuxPort", 8022),
+            termuxUser = raw.optString("termuxUser", ""),
+            termuxAuth = raw.optString("termuxAuth", "password"),
+            termuxPassword = raw.optString("termuxPassword", ""),
+            termuxKey = raw.optString("termuxKey", ""),
+            termuxPassphrase = raw.optString("termuxPassphrase", ""),
+            termuxHostKey = raw.optString("termuxHostKey", ""),
         )
     }
 }
