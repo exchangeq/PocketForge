@@ -101,7 +101,7 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
-    var noRecall by remember(state.sessionTitle) { mutableStateOf(state.sessionTitle.contains("锁定")) }
+    val noRecall = state.noRecall
     var editing by remember { mutableStateOf<MsgUi?>(null) }
     var editText by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
