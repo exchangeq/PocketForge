@@ -33,6 +33,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.File
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -95,13 +97,22 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         sandbox = sandbox,
         skills = skills,
         configProvider = { configRepo.config.value },
-        isUnlocked = { indexRead && readSkills.isNotEmpty() },
+        isUnlocked = { indexRead && readSkills.contains("boundaries.md") },
         onIndexRead = {
             indexRead = true
             _ui.update { it.copy(skillsLoaded = true) }
         },
         onSkillRead = { name -> readSkills.add(name) },
-        onPlan = { plan -> _ui.update { it.copy(plan = plan) } },
+        onPlan = { plan ->
+            _ui.update { it.copy(plan = plan) }
+            runCatching {
+                val dir = activeProjectDir() ?: return@runCatching
+                val st = projectState(dir)
+                st.put("plan", org.json.JSONArray().also { arr -> plan.forEach { arr.put(it.text) } })
+                st.put("updated", System.currentTimeMillis())
+                stateFile(dir).writeText(st.toString())
+            }
+        },
         onProjectOpened = { name -> _ui.update { it.copy(projectName = name) } },
         onHostKeyLearned = { fingerprint ->
             runCatching { configRepo.save(configRepo.config.value.copy(termuxHostKey = fingerprint)) }
@@ -123,6 +134,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             }.toString()
         },
         updateInstall = { updater.install(updater.download()) },
+        projectScopeProvider = { activeProjectDir() },
     )
 
     init {
@@ -241,6 +253,66 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
     }
 
+    // ---------------- 项目上下文与进度 ----------------
+
+    /** 当前会话绑定的项目目录；非项目会话返回 null */
+    private fun activeProjectDir(): File? {
+        if (!sessionKey.startsWith("project-")) return null
+        val slug = sessionKey.removePrefix("project-")
+        val dir = File(sandbox.workspace(), "projects/" + slug)
+        return if (dir.isDirectory) dir else null
+    }
+
+    private fun stateFile(dir: File): File = File(dir, ".pocketforge/state.json").apply { parentFile?.mkdirs() }
+
+    fun projectState(dir: File): JSONObject = runCatching {
+        val f = stateFile(dir)
+        if (f.exists()) JSONObject(f.readText()) else JSONObject()
+    }.getOrDefault(JSONObject())
+
+    /** 每步工具执行后写进状态与 PROGRESS.md，AI 下次进来能接上 */
+    private fun noteProgress(label: String, ok: Boolean, detail: String) {
+        runCatching {
+            val dir = activeProjectDir() ?: return@runCatching
+            val stamp = java.text.SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
+            val line = "- $stamp · $label · " + (if (ok) "完成" else "失败") + " · " + detail.replace("\n", " ").take(120)
+            val progress = File(dir, "PROGRESS.md")
+            if (!progress.exists()) {
+                progress.writeText("# PROGRESS.md · 施工日志\n\n> 每一步自动追加；AI 开工前先读这个文件，从最后一行接着做。\n\n")
+            }
+            progress.appendText(line + "\n")
+
+            val st = projectState(dir)
+            val steps = st.optJSONArray("steps") ?: org.json.JSONArray()
+            steps.put(line)
+            val trimmed = org.json.JSONArray()
+            (maxOf(0, steps.length() - 30) until steps.length()).forEach { trimmed.put(steps.optString(it)) }
+            st.put("steps", trimmed)
+            st.put("updated", System.currentTimeMillis())
+            st.put("last", line)
+            stateFile(dir).writeText(st.toString())
+        }
+    }
+
+    /** 给系统提示用的项目摘要 */
+    private fun projectBrief(): String {
+        val dir = activeProjectDir() ?: return ""
+        val st = projectState(dir)
+        val goal = st.optString("goal", "")
+        val plan = st.optJSONArray("plan")?.let { arr -> (0 until arr.length()).joinToString("；") { arr.optString(it) } } ?: ""
+        val last = st.optString("last", "")
+        return buildString {
+            appendLine()
+            appendLine("## 当前项目（已绑定）")
+            appendLine("项目目录：projects/" + dir.name + "（写入只能发生在这里）")
+            if (goal.isNotBlank()) appendLine("目标：" + goal)
+            if (plan.isNotBlank()) appendLine("计划：" + plan)
+            if (last.isNotBlank()) appendLine("上次做到哪一步：" + last)
+            appendLine("开工顺序：先 fs_read PROGRESS.md 看最后一行，再 fs_read PROJECT.md 与 README.md，然后 plan_set 更新计划，再动手。")
+            appendLine("每完成一步都会自动追加到 PROGRESS.md，不要把已经做完的事重做。")
+        }
+    }
+
     // ---------------- 用量统计 ----------------
 
     private val usagePrefs get() = appContext.getSharedPreferences("pf-usage", Context.MODE_PRIVATE)
@@ -356,6 +428,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     fun setNoRecall(on: Boolean): String {
         noRecall = on
         persistNoRecall(sessionKey, on)
+        _ui.update { it.copy(noRecall = on) }
         return if (on) "已开启防撤回：本会话已写内容锁定，无法修改" else "已关闭防撤回"
     }
 
@@ -410,7 +483,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         val visible = history
             .filter { it.role == "user" || (it.role == "assistant" && !it.content.isNullOrBlank()) }
             .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
-        _ui.value = UiState(messages = visible, projectName = title, sessionTitle = title)
+        _ui.value = UiState(messages = visible, projectName = title, sessionTitle = title, noRecall = noRecallMap().optBoolean(key, false))
         return true
     }
 
@@ -424,7 +497,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         sessionStore.setTitle(key, title)
         persistNoRecall(key, false)
         noRecall = false
-        _ui.value = UiState(projectName = title, sessionTitle = title)
+        _ui.value = UiState(projectName = title, sessionTitle = title, noRecall = false)
         return key
     }
 
@@ -448,6 +521,21 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     /** 项目专属会话：已存在则直接进入，否则新建并进入 */
     fun enterProjectSession(slug: String, title: String): String {
         val key = "project-" + slug
+        runCatching {
+            val dir = File(sandbox.workspace(), "projects/" + slug)
+            if (dir.isDirectory) {
+                val st = projectState(dir)
+                if (st.optString("goal").isBlank()) {
+                    st.put("goal", title)
+                    st.put("updated", System.currentTimeMillis())
+                    stateFile(dir).writeText(st.toString())
+                }
+                val progress = File(dir, "PROGRESS.md")
+                if (!progress.exists()) {
+                    progress.writeText("# PROGRESS.md · 施工日志\n\n> 每一步自动追加；AI 开工前先读这个文件，从最后一行接着做。\n")
+                }
+            }
+        }
         val existed = sessionStore.exists(key)
         if (!existed) {
             sessionStore.setTitle(key, title)
@@ -933,6 +1021,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 upsertStep(messageId, StepUi(stepId, label, shortArgs))
 
                 val result = tools.dispatch(call.name, call.arguments)
+                noteProgress(label, result.ok, result.summary)
 
                 upsertStep(
                     messageId,
@@ -983,11 +1072,13 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         appendLine("可用技能：${SkillLibrary.ENTRIES.joinToString("、") { it.first }}")
         appendLine()
         appendLine("## 硬性规则（违反即视为失败）")
-        appendLine("1. 任何新项目 / 新目录 / 新文件之前，必须先调用 skills_index 读总索引，再按项目类型调用 skill_read（game-dev.md / writing.md / app-dev.md），并读 boundaries.md。")
+        appendLine("1. 任何新项目 / 新目录 / 新文件之前，必须先 skills_index → skill_read(类型技能：game-dev / writing / app-dev) → skill_read(boundaries.md) → skill_read(project-progress.md)；写代码再加读 syntax-kotlin.md。缺 boundaries.md 的 skill_read，工具层会直接拒绝写入。")
         appendLine("2. 只允许写工作区；读取可以覆盖公共存储根目录，但绝不修改。")
         appendLine("3. 不要臆造文件、目录、命令或 API；不确定就先 fs_list / fs_read 确认。")
         appendLine("4. 开工前用 plan_set 汇报分步计划；一次只推进一个可验证的小步骤，写完后立刻自检。")
         appendLine("5. 任何交付都按 quality-output.md 自检：不留 TODO / 省略号 / 空实现，不写填充句，命名与数值前后一致；交付先给结论，再给依据，最后给下一步。")
+        append(projectBrief())
+        appendLine()
         appendLine("6. 用户消息里出现 `【附件：文件名】` 或让你读工作区 docs/ 下的文件时，按 document-ingest.md 处理：先建事实清单，再动笔；不擅自改写用户原文里的数字与称谓。")
         appendLine("5. 删除一律用 fs_delete（默认进 .trash 回收站）。")
         appendLine("6. 回复用中文：先给结论，再列「改了哪些文件」，最后给「下一步」。不要输出 API Key 或任何密钥。")
@@ -1085,7 +1176,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             .map { MsgUi(newId(), it.role, it.content.orEmpty()) }
         val title = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
         noRecall = noRecallMap().optBoolean(sessionKey, false)
-        _ui.update { it.copy(messages = visible, sessionTitle = title, projectName = title) }
+        _ui.update { it.copy(messages = visible, sessionTitle = title, projectName = title, noRecall = noRecallMap().optBoolean(sessionKey, false)) }
     }
 
     private fun prettyArgs(raw: String): String {
