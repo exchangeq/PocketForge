@@ -61,6 +61,28 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private var indexRead = false
     private val readSkills = linkedSetOf<String>()
 
+    private val taskPrefs get() = appContext.getSharedPreferences("pf-task", Context.MODE_PRIVATE)
+
+    private fun markPending(goal: String) {
+        runCatching { taskPrefs.edit().putString("goal", goal).putLong("at", System.currentTimeMillis()).apply() }
+    }
+
+    fun clearPendingTask() = runCatching { taskPrefs.edit().remove("goal").apply() }
+
+    /** 上次没跑完的任务（进程被杀、断电、手动强停），重启后可一键继续 */
+    fun pendingTask(): String? {
+        if (_ui.value.busy) return null
+        val goal = taskPrefs.getString("goal", null)?.takeIf { it.isNotBlank() } ?: return null
+        val at = taskPrefs.getLong("at", 0L)
+        if (System.currentTimeMillis() - at > 24 * 3600_000L) {
+            clearPendingTask()
+            return null
+        }
+        return goal
+    }
+
+    fun discardPendingTask() = clearPendingTask()
+
     private val noRecallFile = File(appContext.filesDir, "no-recall.json")
 
     private var noRecall: Boolean = false
@@ -118,6 +140,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 com.pocketforge.ai.service.KeepAliveService.start(appContext)
             }
         }
+        markPending(input)
         history.add(ChatMessage(role = "user", content = input))
         _ui.update {
             it.copy(messages = it.messages + MsgUi(newId(), "user", input), busy = true, lastError = null)
@@ -147,8 +170,10 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
 
         job = scope.launch {
+            var succeeded = false
             try {
                 runLoop()
+                succeeded = true
             } catch (ce: CancellationException) {
                 _ui.update { st ->
                     st.copy(busy = false, messages = st.messages.map { m -> if (m.streaming) m.copy(streaming = false) else m })
@@ -180,6 +205,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     )
                 }
                 sessionStore.save(sessionKey, history)
+                if (succeeded) clearPendingTask()
             }
         }
     }
@@ -279,6 +305,30 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     // ---------------- 文件读写（应用内编辑器） ----------------
+
+    /** 项目打包成 zip，落到工作区 exports/ */
+    fun exportProjectZip(name: String): String = runCatching {
+        val ws = sandbox.workspace()
+        val src = File(ws, "projects/" + name)
+        require(src.exists()) { "项目不存在：$name" }
+        val dir = File(ws, "exports").apply { mkdirs() }
+        val zip = File(dir, name.replace(Regex("[^A-Za-z0-9\\u4e00-\\u9fff._-]"), "_") + ".zip")
+        java.util.zip.ZipOutputStream(zip.outputStream().buffered()).use { out ->
+            src.walkTopDown().filter { it.isFile && it.length() < 8 * 1024 * 1024 }.forEach { f ->
+                val rel = f.path.removePrefix(src.path).trimStart('/')
+                out.putNextEntry(java.util.zip.ZipEntry(rel))
+                f.inputStream().use { it.copyTo(out) }
+                out.closeEntry()
+            }
+        }
+        "已导出 exports/${zip.name}（${String.format("%.1fMB", zip.length() / 1048576.0)}）"
+    }.getOrElse { "导出失败：${it.message}" }
+
+    fun logSummary(): String = com.pocketforge.ai.core.CrashLogger.summary()
+
+    fun latestLog(): String = com.pocketforge.ai.core.CrashLogger.latest()
+
+    fun clearLogs(): String = com.pocketforge.ai.core.CrashLogger.clear()
 
     fun readFileText(path: String): String = runCatching {
         val f = sandbox.resolveRead(path)
@@ -781,6 +831,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             var content = ""
             var toolCalls: List<ToolCall> = emptyList()
             var attempt = 0
+            var effConfig = config
 
             while (true) {
                 attempt++
@@ -795,7 +846,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     timedOut.set(true)
                     runCatching { client.cancel() }
                 }
-                client.chat(config, buildMessages(config), tools.schemas) { event ->
+                client.chat(effConfig, buildMessages(config), tools.schemas) { event ->
                     when (event) {
                         is AiEvent.Delta -> {
                             buffer.append(event.text)
@@ -837,6 +888,12 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                         failure.contains("超时") ||
                         failure.contains("中断")
                     )
+                val rateLimited = failure != null &&
+                    (failure.contains("429") || failure.contains("TPM", true) || failure.contains("rate limit", true))
+                if (rateLimited) {
+                    // 限流时直接把单次额度砍半，给下一轮留出配额
+                    effConfig = effConfig.copy(maxTokens = (effConfig.maxTokens / 2).coerceAtLeast(1024))
+                }
                 if (transient && attempt <= 2 && content.isBlank() && toolCalls.isEmpty()) {
                     updateText(messageId, "上游限流/超时，${6 * attempt} 秒后自动重试…")
                     delay(6000L * attempt)
