@@ -1,13 +1,13 @@
 {
-  "version": 6,
-  "updated": "2026-11-19",
-  "count": 51,
+  "version": 7,
+  "updated": "2026-11-20",
+  "count": 53,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "ff9ae75eb61fdb3cfad6f3e29afc514b9fdd6cae239ab5c37aef1ecfc8d20687",
-      "bytes": 8074
+      "sha256": "e89bb18e9097a1550bf31e33bdc649c96577637b1c64c5625234c3dc63bfedf0",
+      "bytes": 8248
     },
     {
       "name": "accessibility-i18n.md",
@@ -36,8 +36,8 @@
     {
       "name": "app-dev.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/app-dev.md",
-      "sha256": "d3786116b973d1dc618bdd4e5ce189fc2f2ffc9e75fb0ecfd745400695feb269",
-      "bytes": 2563
+      "sha256": "772a62cf16ee291647ed6f4a69152ac2660b36f1b5c6a5d7b193a959ddfc7937",
+      "bytes": 3704
     },
     {
       "name": "asset-pipeline.md",
@@ -202,6 +202,12 @@
       "bytes": 664
     },
     {
+      "name": "project-progress.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/project-progress.md",
+      "sha256": "ff367b114d6d7e87a6c54f173608e1c0a7c356b1e253d3494b559d6b1ff2f4c7",
+      "bytes": 1659
+    },
+    {
       "name": "project-structure.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/project-structure.md",
       "sha256": "3ec1b51ba67471a0cbad7772e030bcfc48665e2fcb266c2b84f27fa7ae844837",
@@ -266,6 +272,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/security.md",
       "sha256": "371630585e748788849250e24ed33860b7267a8b1262afe9d254bdb1b8191823",
       "bytes": 814
+    },
+    {
+      "name": "syntax-kotlin.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/syntax-kotlin.md",
+      "sha256": "0e260bd5736c022a2a47aaa983973ff203cdbd385338daea7a71904479d5359b",
+      "bytes": 3374
     },
     {
       "name": "system-dev.md",
