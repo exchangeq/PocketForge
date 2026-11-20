@@ -30,6 +30,7 @@ class ToolRegistry(
     private val onHostKeyLearned: (String) -> Unit = {},
     private val updateCheck: () -> String = { "更新模块未接入" },
     private val updateInstall: () -> String = { "更新模块未接入" },
+    private val projectScopeProvider: () -> File? = { null },
 ) {
 
     private val locks = DocLocks { runCatching { sandbox.workspace() }.getOrNull() }
@@ -199,6 +200,13 @@ class ToolRegistry(
         return ToolResult(true, "已读取 ${sandbox.relative(file)}（${humanSize(total)}）", text)
     }
 
+    private fun requireWriteScope(file: File) {
+        val scope = projectScopeProvider() ?: return
+        require(file.absolutePath.startsWith(scope.absolutePath)) {
+            "越界：当前在项目「${scope.name}」里，只能写 ${sandbox.relative(scope)}/ 下的文件；要改别的项目先切到那个项目的对话页"
+        }
+    }
+
     private fun fsWrite(args: JSONObject): ToolResult {
         val path = args.optString("path").trim()
         require(path.isNotEmpty()) { "缺少参数 path" }
@@ -209,6 +217,7 @@ class ToolRegistry(
             "单次写入上限 4MB，当前 ${humanSize(bytes.size.toLong())}；长文件请分卷 append"
         }
         val file = sandbox.resolveWrite(path)
+        requireWriteScope(file)
         file.parentFile?.mkdirs()
         require(file.absolutePath != sandbox.workspace().absolutePath) { "不能把工作区根目录当文件写" }
         val rel = sandbox.relative(file)
@@ -229,6 +238,7 @@ class ToolRegistry(
         val path = args.optString("path").trim()
         require(path.isNotEmpty()) { "缺少参数 path" }
         val dir = sandbox.resolveWrite(path)
+        requireWriteScope(dir)
         val created = dir.mkdirs() || dir.isDirectory
         require(created) { "建目录失败：$path" }
         return ToolResult(true, "已就绪目录 ${sandbox.relative(dir)}", dir.absolutePath)
@@ -256,6 +266,7 @@ class ToolRegistry(
         require(path.isNotEmpty()) { "缺少参数 path" }
         val target = sandbox.resolveWrite(path)
         require(target.exists()) { "目标不存在：$path" }
+        requireWriteScope(target)
         require(target.absolutePath != sandbox.workspace().absolutePath) { "拒绝删除工作区根目录" }
         val toTrash = args.optBoolean("toTrash", true)
         if (toTrash) {
@@ -474,6 +485,22 @@ class ToolRegistry(
             }
         }
         onProjectOpened(name)
+
+        runCatching {
+            val pf = File(dir, ".pocketforge").apply { mkdirs() }
+            val state = File(pf, "state.json")
+            if (!state.exists()) {
+                state.writeText(
+                    JSONObject().put("goal", name).put("created", System.currentTimeMillis()).toString()
+                )
+            }
+            val progress = File(dir, "PROGRESS.md")
+            if (!progress.exists()) {
+                progress.writeText(
+                    "# PROGRESS.md · 施工日志\n\n> 每一步自动追加；AI 开工前先读这个文件，从最后一行接着做。\n\n- 项目已创建，等待按 plan 推进。\n"
+                )
+            }
+        }
 
         val tip = buildString {
             if (existed) append("\n\n项目已存在：只补齐缺失文件，没覆盖你已有的内容。")
