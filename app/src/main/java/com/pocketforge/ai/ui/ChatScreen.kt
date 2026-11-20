@@ -95,6 +95,9 @@ fun ChatScreen(
     onEditMessage: (String, String) -> String = { _, _ -> "" },
     onToggleNoRecall: () -> String = { "" },
     onCopyTranscript: () -> String = { "" },
+    pendingTask: String? = null,
+    onResumePending: () -> Unit = {},
+    onDiscardPending: () -> Unit = {},
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
@@ -148,6 +151,22 @@ fun ChatScreen(
             )
             TextButton(onClick = onSwitchSession, contentPadding = PaddingValues(horizontal = 6.dp)) {
                 Text("切换", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        pendingTask?.let { goal ->
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+            ) {
+                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("上次任务中断了", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(goal, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    }
+                    TextButton(onClick = onResumePending) { Text("继续", fontSize = 11.sp) }
+                    TextButton(onClick = onDiscardPending) { Text("忽略", fontSize = 11.sp) }
+                }
             }
         }
         if (!hasApiKey) SetupCard(onOpenSettings)
