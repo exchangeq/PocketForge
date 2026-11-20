@@ -308,6 +308,15 @@ fun AppRoot() {
                         msg
                     },
                     onCopyTranscript = { engine.copyTranscript() },
+                    pendingTask = engine.pendingTask(),
+                    onResumePending = {
+                        val goal = engine.pendingTask()
+                        if (goal != null) {
+                            engine.discardPendingTask()
+                            engine.send("继续未完成的任务：" + goal)
+                        }
+                    },
+                    onDiscardPending = { engine.discardPendingTask() },
                     onExport = {
                         engine.onIo {
                             val msg = engine.exportSession()
@@ -338,6 +347,7 @@ fun AppRoot() {
                     },
                     onReadFile = { path -> engine.readFileText(path) },
                     onSaveFile = { path, text -> engine.saveFileText(path, text) },
+                    onExportZip = { name -> engine.exportProjectZip(name) },
                     onImportDocs = { docPickLauncher.launch(arrayOf("text/*", "application/markdown", "application/octet-stream")) },
                     onOpenChat = { name ->
                         tab = 0
@@ -442,6 +452,9 @@ fun AppRoot() {
                             )
                         }
                     },
+                    logSummary = { engine.logSummary() },
+                    latestLog = { engine.latestLog() },
+                    onClearLogs = { engine.clearLogs() },
                     onUsage = { engine.usageSummary() },
                     onResetUsage = { engine.resetUsage() },
                     onStorageUsage = { engine.storageUsage() },
