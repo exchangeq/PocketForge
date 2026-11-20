@@ -10,6 +10,11 @@ import com.pocketforge.ai.data.ConfigRepository
  */
 class PocketForgeApp : Application() {
 
+    override fun onCreate() {
+        super.onCreate()
+        com.pocketforge.ai.core.CrashLogger.install(this)
+    }
+
     val configRepo: ConfigRepository by lazy { ConfigRepository(this) }
 
     val engine: AgentEngine by lazy { AgentEngine(this, configRepo) }
