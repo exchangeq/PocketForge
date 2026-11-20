@@ -177,7 +177,7 @@ class ToolRegistry(
     private fun fsRead(args: JSONObject): ToolResult {
         val path = args.optString("path").trim()
         require(path.isNotEmpty()) { "缺少参数 path" }
-        val file = sandbox.resolveRead(path)
+        val file = sandbox.resolveReadLoose(path)
         require(file.isFile) { "不是文件：$path" }
         val limit = args.optInt("maxBytes", Sandbox.MAX_READ_BYTES).coerceIn(1024, Sandbox.MAX_READ_BYTES)
         val total = file.length()
