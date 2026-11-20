@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -69,12 +71,17 @@ fun SettingsScreen(
     onAppSettings: () -> Unit = {},
     onUsage: () -> String = { "" },
     onResetUsage: () -> Unit = {},
+    logSummary: () -> String = { "" },
+    latestLog: () -> String = { "" },
+    onClearLogs: () -> String = { "" },
 ) {
     val scope = rememberCoroutineScope()
 
     var permReport by remember { mutableStateOf("") }
     var usage by remember { mutableStateOf("") }
     var tokenUsage by remember { mutableStateOf("") }
+    var logInfo by remember { mutableStateOf("") }
+    var logText by remember { mutableStateOf<String?>(null) }
     var checkResult by remember { mutableStateOf("") }
     var checking by remember { mutableStateOf(false) }
 
@@ -82,6 +89,7 @@ fun SettingsScreen(
         permReport = withContext(Dispatchers.IO) { permissionReport() }
         usage = withContext(Dispatchers.IO) { onStorageUsage() }
         tokenUsage = withContext(Dispatchers.IO) { onUsage() }
+        logInfo = withContext(Dispatchers.IO) { logSummary() }
     }
 
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
@@ -188,6 +196,21 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(0.6f),
             )
+        }
+        // 常用模型一键切换，省得每次手打
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("gpt-4o-mini", "gpt-4o", "deepseek-chat", "qwen-plus").forEach { preset ->
+                TextButton(
+                    onClick = { model = preset },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        preset,
+                        fontSize = 10.5.sp,
+                        color = if (model == preset) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -622,6 +645,7 @@ fun SettingsScreen(
                 InfoLine("更新源", updateRepo.ifBlank { "exchangeq/PocketForge" })
                 InfoLine("占用", usage.ifBlank { "统计中…" })
                 InfoLine("用量", tokenUsage.ifBlank { "暂无记录" })
+                InfoLine("运行日志", logInfo.ifBlank { "无异常记录" })
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -646,6 +670,19 @@ fun SettingsScreen(
                     scope.launch { tokenUsage = withContext(Dispatchers.IO) { onUsage() } }
                 },
             ) { Text("重置用量") }
+            TextButton(
+                contentPadding = PaddingValues(horizontal = 6.dp),
+                onClick = { scope.launch { logText = withContext(Dispatchers.IO) { latestLog() } } },
+            ) { Text("查看日志") }
+            TextButton(
+                contentPadding = PaddingValues(horizontal = 6.dp),
+                onClick = {
+                    scope.launch {
+                        savedTip = withContext(Dispatchers.IO) { onClearLogs() }
+                        logInfo = withContext(Dispatchers.IO) { logSummary() }
+                    }
+                },
+            ) { Text("清空日志") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(
@@ -656,6 +693,21 @@ fun SettingsScreen(
                 Text("清除加密会话", color = MaterialTheme.colorScheme.error)
             }
         }
+        logText?.let { text ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { logText = null },
+                title = { Text("最近日志") },
+                text = {
+                    Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                        SelectionContainer {
+                            Text(text, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { logText = null }) { Text("关闭") } },
+            )
+        }
+
         Spacer(Modifier.height(24.dp))
     }
 }
