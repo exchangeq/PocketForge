@@ -71,6 +71,54 @@ class Sandbox(
         return target
     }
 
+    /**
+     * 宽松解析：模型常把路径写成绝对路径 /storage/emulated/0/PocketForge/... 或丢了 projects/ 前缀。
+     * 依次尝试原样、相对工作区、去掉常见前缀、按文件名在 projects 下搜索。
+     */
+    fun resolveReadLoose(raw: String): File {
+        val p = raw.trim().replace('\\', '/')
+        val candidates = mutableListOf<File>()
+        fun add(f: File) { if (candidates.none { it.path == f.path }) candidates.add(f) }
+
+        add(File(p))
+        if (!p.startsWith("/")) add(File(workspace(), p))
+
+        val prefixes = listOf(
+            "/storage/emulated/0/PocketForge/",
+            "/sdcard/PocketForge/",
+            workspace().path.trimEnd('/') + "/",
+            "/storage/emulated/0/",
+            "/sdcard/",
+        )
+        prefixes.forEach { prefix ->
+            if (p.startsWith(prefix)) {
+                val rest = p.removePrefix(prefix)
+                add(File(workspace(), rest))
+                add(File(rest))
+                add(File(workspace(), "projects/" + rest))
+            }
+        }
+
+        // 只给了文件名：在 projects 下找最近改动的同名文件
+        if (!p.contains('/')) {
+            runCatching {
+                workspace().walkTopDown()
+                    .filter { it.isFile && it.name == p }
+                    .maxByOrNull { it.lastModified() }
+                    ?.let { add(it) }
+            }
+        }
+
+        val errors = mutableListOf<String>()
+        candidates.forEach { f ->
+            runCatching { resolveRead(f.path) }.onSuccess { return it }.onFailure { errors += it.message.orEmpty() }
+        }
+        throw IllegalArgumentException(
+            "读不到 $raw。已尝试 ${candidates.size} 个可能路径：" + errors.firstOrNull { it.contains("权限") }
+                .orEmpty().ifEmpty { errors.lastOrNull() ?: "路径不存在" }
+        )
+    }
+
     /** 解析写入路径，只允许工作区内 */
     fun resolveWrite(raw: String): File {
         val ws = workspace()
