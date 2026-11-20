@@ -126,16 +126,36 @@ class UpdateManager(
         // 私有仓库的 browser_download_url 不带认证会 404；有 token 时优先走 assets API（octet-stream）
         val useApi = cfg.githubToken.isNotBlank() && release.assetApiUrl.isNotBlank()
         val targetUrl = if (useApi) release.assetApiUrl else release.apkUrl
-        val conn: HttpURLConnection = URL(targetUrl).openConnection() as HttpURLConnection
+        val headers = mutableMapOf("User-Agent" to "PocketForge", "Accept" to "application/octet-stream")
+        if (useApi) headers["Authorization"] = "Bearer ${cfg.githubToken.trim()}"
+
+        // 加速：GitHub 支持 Range，4 段并行通常能把单连接限速绕开；不支持则回退单流
+        val fast = runCatching {
+            parallelDownload(targetUrl, headers, release.apkSize, tmp, onProgress)
+        }.getOrDefault(false)
+        if (!fast) {
+            singleDownload(targetUrl, headers, tmp, release.apkSize, onProgress)
+        }
+        if (target.exists()) target.delete()
+        tmp.renameTo(target)
+        return target
+    }
+
+    private fun singleDownload(
+        url: String,
+        headers: Map<String, String>,
+        tmp: File,
+        expected: Long,
+        onProgress: ((Int, String) -> Unit)?,
+    ) {
+        val conn: HttpURLConnection = URL(url).openConnection() as HttpURLConnection
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15_000
         conn.readTimeout = 60_000
-        conn.setRequestProperty("User-Agent", "PocketForge")
-        conn.setRequestProperty("Accept", "application/octet-stream")
-        if (useApi) conn.setRequestProperty("Authorization", "Bearer ${cfg.githubToken.trim()}")
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         val code = conn.responseCode
         if (code !in 200..299) throw IllegalStateException("下载失败：HTTP $code")
-        val total = conn.contentLengthLong.takeIf { it > 0 } ?: release.apkSize
+        val total = conn.contentLengthLong.takeIf { it > 0 } ?: expected
         conn.inputStream.use { input ->
             tmp.outputStream().use { output ->
                 val buffer = ByteArray(64 * 1024)
@@ -155,9 +175,54 @@ class UpdateManager(
             }
         }
         conn.disconnect()
-        if (target.exists()) target.delete()
-        tmp.renameTo(target)
-        return target
+    }
+
+    /** 4 段 Range 并行下载；任一分段失败就返回 false 交给单流重下 */
+    private fun parallelDownload(
+        url: String,
+        headers: Map<String, String>,
+        total: Long,
+        tmp: File,
+        onProgress: ((Int, String) -> Unit)?,
+    ): Boolean {
+        if (total <= 0 || total < 6 * 1024 * 1024) return false
+        val parts = 4
+        val chunk = total / parts
+        val done = java.util.concurrent.atomic.AtomicLong(0)
+        val errors = java.util.concurrent.atomic.AtomicInteger(0)
+
+        val threads = (0 until parts).map { i ->
+            val start = i * chunk
+            val end = if (i == parts - 1) total - 1 else start + chunk - 1
+            kotlin.concurrent.thread {
+                runCatching {
+                    val conn: HttpURLConnection = URL(url).openConnection() as HttpURLConnection
+                    conn.instanceFollowRedirects = true
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 60_000
+                    headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+                    conn.setRequestProperty("Range", "bytes=" + start + "-" + end)
+                    if (conn.responseCode != 206) throw IllegalStateException("不支持分段：HTTP " + conn.responseCode)
+                    java.io.RandomAccessFile(tmp, "rw").use { raf ->
+                        raf.seek(start)
+                        conn.inputStream.use { input ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n <= 0) break
+                                raf.write(buf, 0, n)
+                                val d = done.addAndGet(n.toLong())
+                                val pct = ((d * 100) / total).toInt()
+                                onProgress?.invoke(pct.coerceIn(0, 100), human(d, total))
+                            }
+                        }
+                    }
+                    conn.disconnect()
+                }.onFailure { errors.incrementAndGet() }
+            }
+        }
+        threads.forEach { it.join() }
+        return errors.get() == 0
     }
 
     /** 校验：包名一致 + 签名摘要一致 */
