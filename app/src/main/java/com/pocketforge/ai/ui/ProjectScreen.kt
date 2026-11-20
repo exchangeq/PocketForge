@@ -64,6 +64,7 @@ fun ProjectScreen(
     onProjectClick: (String) -> List<String> = { emptyList() },
     onReadFile: (String) -> String = { "" },
     onSaveFile: (String, String) -> String = { _, _ -> "" },
+    onExportZip: (String) -> String = { "" },
     onOpenChat: (String) -> String = { "" },
     onImportDocs: () -> Unit = {},
     onEnterProjectChat: (String, String) -> String = { _, _ -> "" },
@@ -586,6 +587,11 @@ fun ProjectScreen(
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            message = withContext(Dispatchers.IO) { onExportZip(fileListTitle) }
+                        }
+                    }) { Text("导出 ZIP", fontSize = 11.sp) }
                     TextButton(onClick = {
                         val name = fileListTitle
                         fileList = null
