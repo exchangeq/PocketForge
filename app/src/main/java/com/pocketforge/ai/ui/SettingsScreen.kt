@@ -69,6 +69,10 @@ fun SettingsScreen(
     onToggleKeepAlive: (Boolean) -> Unit = {},
     onBatteryWhitelist: () -> Unit = {},
     onAppSettings: () -> Unit = {},
+    downloaderPkg: String? = null,
+    useDownloader: Boolean = true,
+    onToggleUseDownloader: (Boolean) -> Unit = {},
+    onHandoffDownloader: () -> String = { "" },
     onUsage: () -> String = { "" },
     onResetUsage: () -> Unit = {},
     logSummary: () -> String = { "" },
@@ -526,6 +530,34 @@ fun SettingsScreen(
                             }
                         },
                     ) { Text(if (downloading) "下载中…" else "下载并安装") }
+                }
+
+                // LM 下载器接管
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Switch(
+                        checked = useDownloader && downloaderPkg != null,
+                        enabled = downloaderPkg != null,
+                        onCheckedChange = onToggleUseDownloader,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (downloaderPkg != null) "检测到下载器：$downloaderPkg" else "未检测到 LM 下载器",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Text(
+                            if (downloaderPkg != null) "开启后点「下载并安装」会直接跳到下载器建任务；装完回这里安装"
+                            else "安装 com.lm.downloader 后可把下载任务交给它，32 线程并发更快",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (downloaderPkg != null) {
+                        TextButton(
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                            onClick = { updateMsg = onHandoffDownloader() },
+                        ) { Text("立即交给它", fontSize = 11.sp) }
+                    }
                 }
                 if (updateProgress.isNotEmpty() && downloading) {
                     Spacer(Modifier.height(6.dp))
