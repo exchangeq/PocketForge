@@ -1,13 +1,13 @@
 {
-  "version": 8,
+  "version": 9,
   "updated": "2026-11-21",
-  "count": 54,
+  "count": 55,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "28a71a9f1973d9133eb65c575ef7081302ebda127eaed26cbf42143bb0096408",
-      "bytes": 8346
+      "sha256": "c03e29461cfedea319cabf67908a03dfe56dec53334e5644a446778d7722b263",
+      "bytes": 8426
     },
     {
       "name": "accessibility-i18n.md",
@@ -150,8 +150,8 @@
     {
       "name": "image-generation.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/image-generation.md",
-      "sha256": "fcafd4e03dcf0f9ae00b01380fd52ac318a66b527e689bfc1bf9e903ecf313f5",
-      "bytes": 2563
+      "sha256": "736cb6c3a83adfa201683c012fb3d93cb4ed98101b6d70e7bb8a68812b5449f9",
+      "bytes": 2832
     },
     {
       "name": "image-pipeline.md",
@@ -188,6 +188,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/narrative-structure.md",
       "sha256": "f5a43b9ae603773017a6ac1010b30c38de2008414337964b5b75f854f9479d4a",
       "bytes": 739
+    },
+    {
+      "name": "network-stability.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/network-stability.md",
+      "sha256": "89ee4daf1ccbcfe71e142e2a6f63defe5f57bfa0c4a58f2a1bdfed2d3b2da401",
+      "bytes": 1843
     },
     {
       "name": "performance.md",
