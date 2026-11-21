@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -90,6 +91,10 @@ fun AppRoot() {
     var renameText by remember { mutableStateOf("") }
     var sessionList by remember { mutableStateOf<List<Triple<String, String, Int>>>(emptyList()) }
     var updateDismissed by remember { mutableStateOf(false) }
+    val prefs = remember { context.getSharedPreferences("pf-prefs", Context.MODE_PRIVATE) }
+    var openTabs by remember { mutableStateOf(readTabs(prefs, engine.currentSessionKey(), engine.currentSessionTitle())) }
+    var activeKey by remember { mutableStateOf(engine.currentSessionKey()) }
+    var gallery by remember { mutableStateOf<List<com.pocketforge.ai.core.ImageClient.ImageMeta>>(emptyList()) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -138,6 +143,8 @@ fun AppRoot() {
         skills = engine.skillStatus()
         forced = engine.forceInjected()
         locks = engine.lockedDocs()
+        gallery = engine.gallery()
+        if (openTabs.isEmpty()) openTabs = readTabs(prefs, engine.currentSessionKey(), engine.currentSessionTitle())
         while (true) {
             hasStorage = engine.hasAllFilesAccess()
             delay(1200)
@@ -157,8 +164,8 @@ fun AppRoot() {
             busy = state.busy,
             hasKey = hasKey,
             updateTag = updateTag,
-            onOpenSettings = { tab = 2 },
-            onUpdateClick = { tab = 2 },
+            onOpenSettings = { tab = 3 },
+            onUpdateClick = { tab = 3 },
         )
 
         if (updateTag != null && !updateDismissed) {
@@ -169,7 +176,7 @@ fun AppRoot() {
                     Text("当前 ${engine.currentVersion()}，可升级到 ${updateTag}。\n\n更新包会先校验签名，不符会拒绝安装，不会装进别的应用。")
                 },
                 confirmButton = {
-                    TextButton(onClick = { updateDismissed = true; tab = 2 }) { Text("去更新") }
+                    TextButton(onClick = { updateDismissed = true; tab = 3 }) { Text("去更新") }
                 },
                 dismissButton = {
                     TextButton(onClick = { updateDismissed = true }) { Text("稍后") }
@@ -208,6 +215,9 @@ fun AppRoot() {
                                     Modifier.fillMaxWidth()
                                         .clickable {
                                             engine.switchSession(hit.key)
+                                            activeKey = hit.key
+                                            openTabs = pushTab(openTabs, hit.key, hit.title)
+                                            writeTabs(prefs, openTabs)
                                             showSessions = false
                                         }
                                         .padding(vertical = 6.dp),
@@ -227,6 +237,9 @@ fun AppRoot() {
                                 Column(
                                     Modifier.weight(1f).clickable {
                                         engine.switchSession(key)
+                                        activeKey = key
+                                        openTabs = pushTab(openTabs, key, title)
+                                        writeTabs(prefs, openTabs)
                                         showSessions = false
                                     },
                                 ) {
@@ -251,7 +264,10 @@ fun AppRoot() {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
+                        val key = engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
+                        openTabs = pushTab(openTabs, key, "新对话")
+                        activeKey = key
+                        writeTabs(prefs, openTabs)
                         sessionList = engine.sessions()
                         showSessions = false
                         tab = 0
@@ -309,6 +325,21 @@ fun AppRoot() {
                     },
                     onCopyTranscript = { engine.copyTranscript() },
                     onGenerateImage = { prompt, size -> withContext(Dispatchers.IO) { engine.generateImage(prompt, size) } },
+                    tabs = openTabs,
+                    activeKey = activeKey,
+                    onSelectTab = { key ->
+                        if (engine.switchSession(key)) {
+                            activeKey = key
+                            sessionList = engine.sessions()
+                        }
+                    },
+                    onNewTab = {
+                        val key = engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
+                        openTabs = pushTab(openTabs, key, "新对话")
+                        activeKey = key
+                        writeTabs(prefs, openTabs)
+                        sessionList = engine.sessions()
+                    },
                     pendingTask = engine.pendingTask(),
                     onResumePending = {
                         val goal = engine.pendingTask()
@@ -326,7 +357,7 @@ fun AppRoot() {
                             }
                         }
                     },
-                    onOpenSettings = { tab = 2 },
+                    onOpenSettings = { tab = 3 },
                 )
 
                 1 -> ProjectScreen(
@@ -395,6 +426,20 @@ fun AppRoot() {
                         msg
                     },
                     notice = notice,
+                )
+
+                2 -> ImageScreen(
+                    busy = state.busy,
+                    provider = config.imageProvider,
+                    defaultModel = config.imageModel,
+                    gallery = gallery,
+                    onGenerate = { prompt, size, model ->
+                        val msg = withContext(Dispatchers.IO) { engine.generateImage(prompt, size, model) }
+                        gallery = engine.gallery()
+                        msg
+                    },
+                    onRefreshGallery = { gallery = engine.gallery() },
+                    onDelete = { path -> engine.deleteImage(path) },
                 )
 
                 else -> SettingsScreen(
@@ -601,7 +646,8 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
     val items = listOf(
         Triple("对话", Icons.Default.MailOutline, 0),
         Triple("项目", Icons.Default.List, 1),
-        Triple("设置", Icons.Default.Settings, 2),
+        Triple("画图", Icons.Default.AddCircle, 2),
+        Triple("设置", Icons.Default.Settings, 3),
     )
     Column {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -639,5 +685,39 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
                 }
             }
         }
+    }
+}
+
+// ---------------- 多页对话：最近打开的页面本地持久化 ----------------
+
+private fun readTabs(prefs: android.content.SharedPreferences, active: String, activeTitle: String): List<Pair<String, String>> {
+    val raw = prefs.getString("chat_tabs", "").orEmpty()
+    val list = mutableListOf<Pair<String, String>>()
+    if (raw.isNotBlank()) {
+        runCatching {
+            val arr = org.json.JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val row = arr.optJSONArray(i) ?: continue
+                val key = row.optString(0)
+                val title = row.optString(1)
+                if (key.isNotBlank()) list.add(key to title.ifBlank { key })
+            }
+        }
+    }
+    if (list.isEmpty()) list.add(active to activeTitle)
+    return pushTab(list, active, activeTitle)
+}
+
+private fun pushTab(list: List<Pair<String, String>>, key: String, title: String): List<Pair<String, String>> {
+    val next = list.filterNot { it.first == key }.toMutableList()
+    next.add(0, key to title)
+    return next.take(6)
+}
+
+private fun writeTabs(prefs: android.content.SharedPreferences, list: List<Pair<String, String>>) {
+    runCatching {
+        val arr = org.json.JSONArray()
+        list.forEach { (k, t) -> arr.put(org.json.JSONArray().put(k).put(t)) }
+        prefs.edit().putString("chat_tabs", arr.toString()).apply()
     }
 }
