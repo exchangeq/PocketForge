@@ -34,3 +34,9 @@ GitHub Releases（latest）
 
 - 只有用户明确说「检查更新 / 升级」才调 `update_check` / `update_install`。
 - 汇报时给：当前版本、最新 tag、包体大小、校验结果。
+
+## 7. 交给 LM 下载器
+
+- 检测到 `com.lm.downloader` / `com.lm.downloader.beta` 时，调用 `download_handoff(url, filename)` 把链接交给它，由它建任务（32 路并发更快）。
+- 应用内更新点「下载并安装」也会优先跳下载器；想用内置下载就把设置里的开关关掉。
+- 下载器装完后回到 PocketForge 的「设置 → 远程更新」再点安装，签名校验仍由本应用完成。
