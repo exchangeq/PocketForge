@@ -114,6 +114,18 @@ class UpdateManager(
     }
 
     /** 下载 APK 到 cache/update，返回文件；失败抛异常 */
+    fun downloaderPackage(): String? = DownloaderBridge.installedPackage(context)
+
+    /** 把最新版的下载任务交给 LM 下载器，不在应用内占网速 */
+    fun handoffUpdate(): String {
+        val cfg = configProvider()
+        val result = check()
+        val release = result.release ?: return result.message
+        val useApi = cfg.githubToken.isNotBlank() && release.assetApiUrl.isNotBlank()
+        val url = if (useApi) release.assetApiUrl else release.apkUrl
+        return DownloaderBridge.handoff(context, url, "PocketForge-${release.tag}.apk")
+    }
+
     fun download(onProgress: ((Int, String) -> Unit)? = null): File {
         val cfg = configProvider()
         val result = check()
