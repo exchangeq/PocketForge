@@ -84,6 +84,7 @@ fun SettingsScreen(
     var permReport by remember { mutableStateOf("") }
     var usage by remember { mutableStateOf("") }
     var tokenUsage by remember { mutableStateOf("") }
+    var imageProvider by remember(config) { mutableStateOf(config.imageProvider.ifBlank { "pollinations" }) }
     var imageModel by remember(config) { mutableStateOf(config.imageModel) }
     var imageSize by remember(config) { mutableStateOf(config.imageSize) }
     var logInfo by remember { mutableStateOf("") }
@@ -139,7 +140,8 @@ fun SettingsScreen(
         baseUrl = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" },
         apiKey = apiKey.trim(),
         model = model.trim().ifEmpty { "gpt-4o-mini" },
-        imageModel = imageModel.trim().ifEmpty { "gpt-image-1" },
+        imageProvider = imageProvider,
+        imageModel = imageModel.trim().ifEmpty { if (imageProvider == "openai") "gpt-image-1" else "flux" },
         imageSize = imageSize.trim().ifEmpty { "1024x1024" },
         temperature = temperature.trim().toDoubleOrNull() ?: 0.4,
         maxTokens = maxTokens.trim().toIntOrNull() ?: 8192,
@@ -203,6 +205,22 @@ fun SettingsScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(0.6f),
+            )
+        }
+        Text("生图通道", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            androidx.compose.material3.FilterChip(
+                selected = imageProvider == "pollinations",
+                onClick = {
+                    imageProvider = "pollinations"
+                    if (imageModel == "gpt-image-1") imageModel = "flux"
+                },
+                label = { Text("Pollinations 免费", fontSize = 11.sp) },
+            )
+            androidx.compose.material3.FilterChip(
+                selected = imageProvider == "openai",
+                onClick = { imageProvider = "openai" },
+                label = { Text("OpenAI 兼容", fontSize = 11.sp) },
             )
         }
         // 常用模型一键切换，省得每次手打
