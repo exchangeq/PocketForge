@@ -1,5 +1,17 @@
 # 更新日志
 
+## v1.11.0（生图功能）
+
+- 新增工具 `image_generate(prompt, size, model)`：走 OpenAI 兼容 `/v1/images/generations`，支持 b64_json 与 url 两种返回。
+- 生成结果自动落到 `assets/images/img-<时间戳>-<序号>.png`，直接贴在对话里（助手消息带缩略大图）。
+- 对话底部新增「画图」入口：输入提示词、选尺寸（1:1 / 竖版 / 横版），不用写代码也能出图。
+- 设置 → 模型接入新增「图片模型」「图片尺寸」，保存即生效。
+- 新增技能 `image-generation.md`：提示词结构八要素、尺寸对照、数量门禁（"图里 N 个"先核对再展示）、项目素材去向、禁用清单。
+- 系统提示新增第 7 条：出图统一走 image_generate，工具没成功不许说画好了。
+- `skills-index.json` 升 v8，54 项。
+
+**包体**：release 约 12MB，签名延续 `a5d8a11…f4b40`。
+
 ## v1.10.0（对接 LM 下载器）
 
 - 检测 `com.lm.downloader` / `com.lm.downloader.beta`（清单里加了 `<queries>` 包可见性）。
