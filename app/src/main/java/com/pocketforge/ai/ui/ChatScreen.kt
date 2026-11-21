@@ -68,6 +68,10 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.sp
 import com.pocketforge.ai.data.MsgUi
 import com.pocketforge.ai.data.StepStatus
@@ -98,11 +102,15 @@ fun ChatScreen(
     pendingTask: String? = null,
     onResumePending: () -> Unit = {},
     onDiscardPending: () -> Unit = {},
+    onGenerateImage: suspend (String, String) -> String = { _, _ -> "" },
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
     val noRecall = state.noRecall
     var editing by remember { mutableStateOf<MsgUi?>(null) }
+    var showImageDialog by remember { mutableStateOf(false) }
+    var imagePrompt by remember { mutableStateOf("") }
+    var imageSize by remember { mutableStateOf("1024x1024") }
     var editText by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -211,6 +219,9 @@ fun ChatScreen(
                 enabled = state.messages.isNotEmpty() && !state.busy,
                 contentPadding = PaddingValues(horizontal = 6.dp),
             ) { Text("撤回", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            TextButton(onClick = { showImageDialog = true }, enabled = !state.busy) {
+                Text("画图", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+            }
             TextButton(onClick = onExport, enabled = state.messages.isNotEmpty()) {
                             Text("导出", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                         }
@@ -238,6 +249,53 @@ fun ChatScreen(
             },
             onStop = onStop,
         )
+
+        if (showImageDialog) {
+            AlertDialog(
+                onDismissRequest = { showImageDialog = false },
+                title = { Text("生成图片") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = imagePrompt,
+                            onValueChange = { imagePrompt = it },
+                            label = { Text("画面描述") },
+                            modifier = Modifier.fillMaxWidth().height(150.dp),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("1024x1024", "1536x1024", "1024x1536").forEach { sz ->
+                                TextButton(
+                                    onClick = { imageSize = sz },
+                                    contentPadding = PaddingValues(horizontal = 6.dp),
+                                ) {
+                                    Text(
+                                        sz,
+                                        fontSize = 10.sp,
+                                        color = if (imageSize == sz) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val p = imagePrompt.trim()
+                        if (p.isNotEmpty()) {
+                            showImageDialog = false
+                            scope.launch {
+                                val msg = onGenerateImage(p, imageSize)
+                                if (msg.startsWith("生图失败") || msg.startsWith("还没配置")) {
+                                    input = input
+                                }
+                            }
+                            imagePrompt = ""
+                        }
+                    }) { Text("生成") }
+                },
+                dismissButton = { TextButton(onClick = { showImageDialog = false }) { Text("取消") } },
+            )
+        }
 
         editing?.let { target ->
             AlertDialog(
@@ -412,6 +470,17 @@ private fun MessageRow(
             Avatar()
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
+                message.imagePath?.let { path ->
+                    val bmp = remember(path) { runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    }
+                }
                 if (message.steps.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         message.steps.forEachIndexed { index, step ->
