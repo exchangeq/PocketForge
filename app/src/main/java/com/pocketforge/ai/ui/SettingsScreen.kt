@@ -84,6 +84,8 @@ fun SettingsScreen(
     var permReport by remember { mutableStateOf("") }
     var usage by remember { mutableStateOf("") }
     var tokenUsage by remember { mutableStateOf("") }
+    var imageModel by remember(config) { mutableStateOf(config.imageModel) }
+    var imageSize by remember(config) { mutableStateOf(config.imageSize) }
     var logInfo by remember { mutableStateOf("") }
     var logText by remember { mutableStateOf<String?>(null) }
     var checkResult by remember { mutableStateOf("") }
@@ -137,6 +139,8 @@ fun SettingsScreen(
         baseUrl = baseUrl.trim().ifEmpty { "https://api.openai.com/v1" },
         apiKey = apiKey.trim(),
         model = model.trim().ifEmpty { "gpt-4o-mini" },
+        imageModel = imageModel.trim().ifEmpty { "gpt-image-1" },
+        imageSize = imageSize.trim().ifEmpty { "1024x1024" },
         temperature = temperature.trim().toDoubleOrNull() ?: 0.4,
         maxTokens = maxTokens.trim().toIntOrNull() ?: 8192,
         reasoningEffort = effort,
@@ -202,6 +206,24 @@ fun SettingsScreen(
             )
         }
         // 常用模型一键切换，省得每次手打
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = imageModel,
+                onValueChange = { imageModel = it },
+                label = { Text("图片模型") },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = imageSize,
+                onValueChange = { imageSize = it },
+                label = { Text("图片尺寸") },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("gpt-4o-mini", "gpt-4o", "deepseek-chat", "qwen-plus").forEach { preset ->
                 TextButton(
