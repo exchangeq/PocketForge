@@ -58,6 +58,7 @@ class ToolRegistry(
             "fs_search" to "搜索文件/内容",
             "update_check" to "检查新版本",
             "update_install" to "下载并安装新版",
+            "download_handoff" to "交给下载器下载",
         )
 
         private val WRITE_TOOLS = setOf(
@@ -100,11 +101,20 @@ class ToolRegistry(
                 "termux_exec" -> termuxExec(args)
                 "update_check" -> ToolResult(true, updateCheck())
                 "update_install" -> ToolResult(true, updateInstall())
+                "download_handoff" -> downloadHandoff(args)
                 else -> ToolResult(false, "未知工具：$name")
             }
         } catch (t: Throwable) {
             ToolResult(false, "执行失败：${t.message ?: t.javaClass.simpleName}")
         }
+    }
+
+    private fun downloadHandoff(args: JSONObject): ToolResult {
+        val url = args.optString("url").trim()
+        require(url.startsWith("http")) { "url 必须是 http(s) 链接" }
+        val name = args.optString("filename").ifBlank { url.substringAfterLast('/').ifBlank { "下载文件" } }
+        val msg = com.pocketforge.ai.update.DownloaderBridge.handoff(context, url, name)
+        return ToolResult(true, msg, url)
     }
 
     // ---------------- 技能 ----------------
@@ -1238,6 +1248,16 @@ class Storage(private val root: File) {
         )
         arr.put(fn("update_check", "检查 GitHub Release 是否有新版本（读 updateRepo 配置）。", JSONObject(), emptyList()))
         arr.put(fn("update_install", "下载最新 release APK，校验包名与签名后拉起系统安装器。", JSONObject(), emptyList()))
+        arr.put(
+            fn(
+                "download_handoff",
+                "把任意 http(s) 链接交给 LM 下载器建下载任务（检测到 com.lm.downloader 时直接跳转）。",
+                JSONObject()
+                    .put("url", prop("string", "下载链接"))
+                    .put("filename", prop("string", "保存文件名，可留空")),
+                listOf("url"),
+            )
+        )
         arr.put(
             fn(
                 "doc_lock",
