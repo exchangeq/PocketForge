@@ -33,8 +33,9 @@ data class AppConfig(
     // 发行版远程更新 + GitHub 访问
     val updateRepo: String = "exchangeq/PocketForge",
     val githubToken: String = "",
-    // 生图：兼容 OpenAI /v1/images/generations 的模型与尺寸
-    val imageModel: String = "gpt-image-1",
+    // 生图：pollinations（免费，无需 Key，默认 flux）| openai（兼容 /v1/images/generations）
+    val imageProvider: String = "pollinations",
+    val imageModel: String = "flux",
     val imageSize: String = "1024x1024",
 ) {
 
@@ -64,6 +65,7 @@ data class AppConfig(
         put("termuxHostKey", termuxHostKey)
         put("updateRepo", updateRepo)
         put("githubToken", githubToken)
+        put("imageProvider", imageProvider)
         put("imageModel", imageModel)
         put("imageSize", imageSize)
     }
@@ -112,7 +114,8 @@ data class AppConfig(
             termuxHostKey = raw.optString("termuxHostKey", ""),
             updateRepo = raw.optString("updateRepo", "exchangeq/PocketForge"),
             githubToken = raw.optString("githubToken", ""),
-            imageModel = raw.optString("imageModel", "gpt-image-1"),
+            imageProvider = raw.optString("imageProvider", "pollinations"),
+            imageModel = raw.optString("imageModel", "flux"),
             imageSize = raw.optString("imageSize", "1024x1024"),
         )
     }
