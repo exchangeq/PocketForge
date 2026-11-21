@@ -1,13 +1,13 @@
 {
-  "version": 7,
-  "updated": "2026-11-20",
-  "count": 53,
+  "version": 8,
+  "updated": "2026-11-21",
+  "count": 54,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "e89bb18e9097a1550bf31e33bdc649c96577637b1c64c5625234c3dc63bfedf0",
-      "bytes": 8248
+      "sha256": "28a71a9f1973d9133eb65c575ef7081302ebda127eaed26cbf42143bb0096408",
+      "bytes": 8346
     },
     {
       "name": "accessibility-i18n.md",
@@ -148,6 +148,12 @@
       "bytes": 711
     },
     {
+      "name": "image-generation.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/image-generation.md",
+      "sha256": "fcafd4e03dcf0f9ae00b01380fd52ac318a66b527e689bfc1bf9e903ecf313f5",
+      "bytes": 2563
+    },
+    {
       "name": "image-pipeline.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/image-pipeline.md",
       "sha256": "ae5a30fca5df0fdc01c1ea82b2065472aa58c41f2c6c9f94d12dd5da3447dfa2",
@@ -240,8 +246,8 @@
     {
       "name": "remote-update.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/remote-update.md",
-      "sha256": "d04f4b0e0ac8356086e16af73b98531a825bf03de8d57f1a6026945a9e3053d7",
-      "bytes": 1651
+      "sha256": "fdbb33c844b7e1333ddc41b4c7af58b63f8079a046b0df08169c6c965e25e43c",
+      "bytes": 2092
     },
     {
       "name": "roadmap-planning.md",
