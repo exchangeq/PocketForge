@@ -56,6 +56,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private val sessionStore = SessionStore(File(appContext.filesDir, "sessions"))
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile private var stopRequested = false
     private var sessionKey: String = "main"
     private var job: Job? = null
     private var lastTextEmit = 0L
@@ -139,10 +140,11 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             runCatching {
                 require(prompt.isNotBlank()) { "缺少提示词 prompt" }
                 val cfg = configRepo.config.value
-                if (cfg.apiKey.isBlank()) {
-                    ToolResult(false, "还没配置 API Key，生图需要 OpenAI 兼容的 /v1/images/generations")
+                val provider = cfg.imageProvider.ifBlank { "pollinations" }
+                if (provider != "pollinations" && cfg.apiKey.isBlank()) {
+                    ToolResult(false, "选了 OpenAI 兼容生图通道但没配 Key；想免费用图就把设置里的生图通道切成 Pollinations")
                 } else {
-                    val outDir = File(sandbox.workspace(), "assets/images")
+                    val outDir = imageDir().apply { mkdirs() }
                     val res = com.pocketforge.ai.core.ImageClient().generate(
                         cfg.copy(imageModel = model.ifBlank { cfg.imageModel }),
                         prompt,
@@ -166,6 +168,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     fun send(text: String) {
         val input = text.trim()
         if (input.isEmpty() || _ui.value.busy) return
+        stopRequested = false
         // 一旦开始长任务，就确保前台服务在跑（用户开过后台常驻时）
         runCatching {
             if (com.pocketforge.ai.service.KeepAliveService.isEnabled(appContext)) {
@@ -242,9 +245,21 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
     }
 
+    /** 用户点「停止」：立刻断流 + 取消协程 + 马上把 UI 恢复成可输入状态（不等协程收尾） */
     fun stop() {
+        stopRequested = true
         client.cancel()
         job?.cancel()
+        _ui.update { st ->
+            st.copy(
+                busy = false,
+                messages = st.messages
+                    .filterNot { it.streaming && it.text.isBlank() && it.steps.isEmpty() }
+                    .map { if (it.streaming) it.copy(streaming = false, text = it.text.ifBlank { "已停止" }) else it },
+                lastError = null,
+            )
+        }
+        runCatching { sessionStore.save(sessionKey, history) }
     }
 
     fun clearSession() {
@@ -784,13 +799,37 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     // ---------------- 生图 ----------------
 
-    fun generateImage(prompt: String, size: String): String = runCatching {
+    fun imageDir(): File = File(runCatching { sandbox.workspace() }.getOrElse { appContext.filesDir }, "assets/images")
+
+    fun gallery(): List<com.pocketforge.ai.core.ImageClient.ImageMeta> =
+        com.pocketforge.ai.core.ImageClient().meta(imageDir()).sortedByDescending { it.time }
+
+    fun deleteImage(path: String): String = runCatching {
+        val file = File(path)
+        if (!file.exists()) return "文件不在了"
+        val ok = file.delete()
+        val meta = File(imageDir(), "meta.jsonl")
+        if (meta.exists()) {
+            val lines = meta.readLines().filterNot { runCatching { JSONObject(it).optString("name") == file.name }.getOrDefault(false) }
+            meta.writeText(if (lines.isEmpty()) "" else lines.joinToString("\n") + "\n")
+        }
+        if (ok) "已删除 " + file.name else "删除失败"
+    }.getOrElse { "删除失败：" + it.message }
+
+    /** 生图：免费 Pollinations 不需要 Key；OpenAI 兼容通道才校验 Key */
+    fun generateImage(prompt: String, size: String, model: String = ""): String = runCatching {
         if (_ui.value.busy) return "正在跑任务，等这轮结束再画"
         val cfg = configRepo.config.value
-        if (cfg.apiKey.isBlank()) return "还没配置 API Key，生图需要 OpenAI 兼容的 /v1/images/generations"
-        val outDir = File(sandbox.workspace(), "assets/images")
+        val provider = cfg.imageProvider.ifBlank { "pollinations" }
+        if (provider != "pollinations" && cfg.apiKey.isBlank()) {
+            return "选了 OpenAI 兼容通道，但还没配置 API Key；想免费用图就把「生图通道」切回 Pollinations"
+        }
+        val outDir = imageDir().apply { mkdirs() }
         _ui.update { it.copy(messages = it.messages + MsgUi(newId(), "user", "画图：" + prompt), busy = true) }
-        val res = com.pocketforge.ai.core.ImageClient().generate(cfg, prompt, size.ifBlank { cfg.imageSize }, 1, outDir)
+        val useCfg = if (model.isBlank()) cfg else cfg.copy(imageModel = model)
+        val res = com.pocketforge.ai.core.ImageClient().generate(
+            useCfg, prompt, size.ifBlank { cfg.imageSize.ifBlank { "1024x1024" } }, 1, outDir,
+        )
         val abs = res.files.first().absolutePath
         _ui.update { st ->
             st.copy(
@@ -966,9 +1005,12 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     private suspend fun runLoop() {
         val config = configRepo.config.value
+        // 系统提示每轮只拼一次（读文件 + 拼技能列表很贵），循环内复用
+        val systemMsg = ChatMessage(role = "system", content = systemPrompt(config))
         val maxRounds = config.maxSteps.coerceIn(1, 60)
         var round = 0
         while (round < maxRounds) {
+            if (stopRequested) break
             round++
             val messageId = newId()
             _ui.update { it.copy(messages = it.messages + MsgUi(messageId, "assistant", streaming = true)) }
@@ -980,6 +1022,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             var effConfig = config
 
             while (true) {
+                if (stopRequested) break
                 attempt++
                 val buffer = StringBuilder()
                 val pending = sortedMapOf<Int, PendingCall>()
@@ -992,7 +1035,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     timedOut.set(true)
                     runCatching { client.cancel() }
                 }
-                client.chat(effConfig, buildMessages(config), tools.schemas) { event ->
+                client.chat(effConfig, buildMessages(systemMsg), tools.schemas) { event ->
                     when (event) {
                         is AiEvent.Delta -> {
                             buffer.append(event.text)
@@ -1009,6 +1052,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     }
                 }
                 watchdog.cancel()
+                if (stopRequested) break
                 if (timedOut.get()) {
                     failure = "本轮请求超过 ${ROUND_TIMEOUT_MS / 1000}s 没有响应，已中止。可拆小目标后重试。"
                 }
@@ -1048,8 +1092,9 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 break
             }
 
-            bumpUsage(buildMessages(config).sumOf { it.content?.length ?: 0 }, content.length)
+            bumpUsage(systemMsg.content.orEmpty().length + history.sumOf { it.content?.length ?: 0 }, content.length)
 
+            if (stopRequested) break
             if (toolCalls.isEmpty() && content.isBlank() && attempt <= 2 && failure == null) {
                 // 上游偶发空响应：短暂等待后再请求一次，别直接把错误甩给用户
                 updateText(messageId, "上游返回空内容，${3 * attempt} 秒后重试…")
@@ -1073,12 +1118,15 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             if (toolCalls.isEmpty()) break
 
             toolCalls.forEach { call ->
+                if (stopRequested) return@forEach
                 val stepId = call.id
                 val label = ToolRegistry.label(call.name)
                 val shortArgs = prettyArgs(call.arguments)
                 upsertStep(messageId, StepUi(stepId, label, shortArgs))
 
-                val result = tools.dispatch(call.name, call.arguments)
+                val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    tools.dispatch(call.name, call.arguments)
+                }
                 noteProgress(label, result.ok, result.summary)
                 if (result.ok && result.payload.startsWith("image=")) {
                     val abs = result.payload.removePrefix("image=")
@@ -1108,9 +1156,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
     }
 
-    private fun buildMessages(config: AppConfig): List<ChatMessage> {
+    private fun buildMessages(system: ChatMessage): List<ChatMessage> {
         trimHistory()
-        val system = ChatMessage(role = "system", content = systemPrompt(config))
         return listOf(system) + history
     }
 
@@ -1144,6 +1191,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         append(projectBrief())
         appendLine()
         appendLine("7. 出图统一走 image_generate（按 image-generation.md：主体+动作+场景+镜头+光线+风格+色彩+构图）；用户点名「图里有 N 个 X」时先核对数量再展示，工具没成功不许说画好了。")
+        appendLine("20. 生图默认走免费 Pollinations 通道（flux），不要因为用户没配 Key 就说不能画；只有用户自己在设置里切到 OpenAI 兼容通道时才需要 Key。")
+        appendLine("21. 出现网络错误先按 network-stability.md 分型：429 退避、401/403 查 Key、404 查地址与模型名，不要一律说成模型故障。")
         appendLine("6. 用户消息里出现 `【附件：文件名】` 或让你读工作区 docs/ 下的文件时，按 document-ingest.md 处理：先建事实清单，再动笔；不擅自改写用户原文里的数字与称谓。")
         appendLine("5. 删除一律用 fs_delete（默认进 .trash 回收站）。")
         appendLine("6. 回复用中文：先给结论，再列「改了哪些文件」，最后给「下一步」。不要输出 API Key 或任何密钥。")
