@@ -135,6 +135,26 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         },
         updateInstall = { updater.install(updater.download()) },
         projectScopeProvider = { activeProjectDir() },
+        imageGenerate = { prompt, size, model ->
+            runCatching {
+                require(prompt.isNotBlank()) { "缺少提示词 prompt" }
+                val cfg = configRepo.config.value
+                if (cfg.apiKey.isBlank()) {
+                    ToolResult(false, "还没配置 API Key，生图需要 OpenAI 兼容的 /v1/images/generations")
+                } else {
+                    val outDir = File(sandbox.workspace(), "assets/images")
+                    val res = com.pocketforge.ai.core.ImageClient().generate(
+                        cfg.copy(imageModel = model.ifBlank { cfg.imageModel }),
+                        prompt,
+                        size.ifBlank { cfg.imageSize },
+                        1,
+                        outDir,
+                    )
+                    val abs = res.files.first().absolutePath
+                    ToolResult(true, res.message, "image=" + abs)
+                }
+            }.getOrElse { ToolResult(false, "生图失败：${it.message}") }
+        },
     )
 
     init {
@@ -762,6 +782,28 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     fun handoffUpdate(): String = updater.handoffUpdate()
 
+    // ---------------- 生图 ----------------
+
+    fun generateImage(prompt: String, size: String): String = runCatching {
+        if (_ui.value.busy) return "正在跑任务，等这轮结束再画"
+        val cfg = configRepo.config.value
+        if (cfg.apiKey.isBlank()) return "还没配置 API Key，生图需要 OpenAI 兼容的 /v1/images/generations"
+        val outDir = File(sandbox.workspace(), "assets/images")
+        _ui.update { it.copy(messages = it.messages + MsgUi(newId(), "user", "画图：" + prompt), busy = true) }
+        val res = com.pocketforge.ai.core.ImageClient().generate(cfg, prompt, size.ifBlank { cfg.imageSize }, 1, outDir)
+        val abs = res.files.first().absolutePath
+        _ui.update { st ->
+            st.copy(
+                busy = false,
+                messages = st.messages + MsgUi(newId(), "assistant", res.message, imagePath = abs),
+            )
+        }
+        res.message
+    }.getOrElse {
+        _ui.update { st -> st.copy(busy = false) }
+        "生图失败：" + it.message
+    }
+
     /** 会话导出为 Markdown，落在工作区 exports/ */
     fun exportSession(): String = runCatching {
         val ws = sandbox.workspace()
@@ -1038,6 +1080,12 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
                 val result = tools.dispatch(call.name, call.arguments)
                 noteProgress(label, result.ok, result.summary)
+                if (result.ok && result.payload.startsWith("image=")) {
+                    val abs = result.payload.removePrefix("image=")
+                    _ui.update { st ->
+                        st.copy(messages = st.messages.map { m -> if (m.id == messageId) m.copy(imagePath = abs) else m })
+                    }
+                }
 
                 upsertStep(
                     messageId,
@@ -1095,6 +1143,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         appendLine("5. 任何交付都按 quality-output.md 自检：不留 TODO / 省略号 / 空实现，不写填充句，命名与数值前后一致；交付先给结论，再给依据，最后给下一步。")
         append(projectBrief())
         appendLine()
+        appendLine("7. 出图统一走 image_generate（按 image-generation.md：主体+动作+场景+镜头+光线+风格+色彩+构图）；用户点名「图里有 N 个 X」时先核对数量再展示，工具没成功不许说画好了。")
         appendLine("6. 用户消息里出现 `【附件：文件名】` 或让你读工作区 docs/ 下的文件时，按 document-ingest.md 处理：先建事实清单，再动笔；不擅自改写用户原文里的数字与称谓。")
         appendLine("5. 删除一律用 fs_delete（默认进 .trash 回收站）。")
         appendLine("6. 回复用中文：先给结论，再列「改了哪些文件」，最后给「下一步」。不要输出 API Key 或任何密钥。")
