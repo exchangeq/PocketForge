@@ -42,84 +42,98 @@ class AiClient {
         tools: JSONArray?,
         onEvent: (AiEvent) -> Unit,
     ) {
-        var connection: HttpURLConnection? = null
-        try {
-            val body = JSONObject().apply {
-                put("model", config.model)
-                put(
-                    "messages",
-                    JSONArray().also { arr -> messages.forEach { arr.put(it.toApiJson()) } }
-                )
-                put("temperature", config.temperature)
-                put("stream", config.stream)
-                put("max_tokens", config.maxTokens)
-                if (config.reasoningEffort != "off") {
-                    put("reasoning_effort", if (config.reasoningEffort == "max") "high" else config.reasoningEffort)
-                }
-                if (tools != null && tools.length() > 0) {
-                    put("tools", tools)
-                    put("tool_choice", "auto")
-                }
+        val bodyBytes = JSONObject().apply {
+            put("model", config.model)
+            put("messages", JSONArray().also { arr -> messages.forEach { arr.put(it.toApiJson()) } })
+            put("temperature", config.temperature)
+            put("stream", config.stream)
+            put("max_tokens", config.maxTokens)
+            if (config.reasoningEffort != "off") {
+                put("reasoning_effort", if (config.reasoningEffort == "max") "high" else config.reasoningEffort)
             }
+            if (tools != null && tools.length() > 0) {
+                put("tools", tools)
+                put("tool_choice", "auto")
+            }
+        }.toString().toByteArray(Charsets.UTF_8)
 
-            val conn = URL(config.endpoint()).openConnection() as HttpURLConnection
-            connection = conn
-            active = conn
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 20_000
-            // 锁屏/弱网时流式分片间隔会变长，给足 240s，避免长回答被误判断流
-            conn.readTimeout = 240_000
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("Accept", if (config.stream) "text/event-stream" else "application/json")
-            conn.setRequestProperty("Authorization", "Bearer ${config.apiKey.trim()}")
-            conn.setRequestProperty("User-Agent", "PocketForge/1.0 (Android)")
-            conn.setRequestProperty("X-PocketForge-Client", "android")
-            conn.outputStream.use { out ->
-                out.write(body.toString().toByteArray(Charsets.UTF_8))
-            }
-
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val errorText = runCatching {
-                    conn.errorStream?.bufferedReader()?.use { it.readText() }
-                }.getOrNull().orEmpty()
-                onEvent(AiEvent.Failed("HTTP $code：${errorText.take(600).ifEmpty { "无响应体" }}"))
-                return
-            }
-
-            if (!config.stream) {
-                val text = conn.inputStream.bufferedReader().use { it.readText() }
-                parseComplete(text, onEvent)
-                return
-            }
-
-            conn.inputStream.bufferedReader().use { reader ->
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    val trimmed = line.trim()
-                    if (!trimmed.startsWith("data:")) continue
-                    val raw = trimmed.removePrefix("data:").trim()
-                    if (raw.isEmpty() || raw == "[DONE]") continue
-                    val payload = if (config.streamCipherKey.isNotEmpty() && StreamCipher.isFrame(raw)) {
-                        runCatching { StreamCipher.openFrame(raw, config.streamCipherKey) }
-                            .getOrElse {
-                                onEvent(AiEvent.Failed("流解密失败：${it.message}"))
-                                return
-                            }
-                    } else {
-                        raw
-                    }
-                    parseChunk(payload, onEvent)
-                }
-            }
-            onEvent(AiEvent.Done)
-        } catch (t: Throwable) {
-            onEvent(AiEvent.Failed(t.message ?: t.javaClass.simpleName))
-        } finally {
-            if (active === connection) active = null
-            runCatching { connection?.disconnect() }
+        // 弱网重试：连接阶段失败（还没收到任何字节）自动重试一次，已经出字就不重试，避免重复输出
+        var emitted = false
+        val wrapped: (AiEvent) -> Unit = { ev ->
+            if (ev !is AiEvent.Done) emitted = true
+            onEvent(ev)
         }
+
+        var lastError = ""
+        for (attempt in 1..2) {
+            if (attempt > 1) Thread.sleep(500)
+            var connection: HttpURLConnection? = null
+            try {
+                val conn = URL(config.endpoint()).openConnection() as HttpURLConnection
+                connection = conn
+                active = conn
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 15_000
+                // 锁屏 / 弱网时分片间隔会拉长，给到 300s，避免长回答被误判断流
+                conn.readTimeout = 300_000
+                conn.doOutput = true
+                conn.useCaches = false
+                conn.setFixedLengthStreamingMode(bodyBytes.size)
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.setRequestProperty("Accept", if (config.stream) "text/event-stream" else "application/json")
+                conn.setRequestProperty("Authorization", "Bearer ${config.apiKey.trim()}")
+                conn.setRequestProperty("User-Agent", "PocketForge/1.12 (Android)")
+                conn.setRequestProperty("X-PocketForge-Client", "android")
+                conn.outputStream.use { out -> out.write(bodyBytes) }
+
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    val errorText = runCatching {
+                        conn.errorStream?.bufferedReader()?.use { it.readText() }
+                    }.getOrNull().orEmpty()
+                    onEvent(AiEvent.Failed("HTTP $code：${errorText.take(600).ifEmpty { "无响应体" }}"))
+                    return
+                }
+
+                if (!config.stream) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    parseComplete(text, wrapped)
+                    return
+                }
+
+                conn.inputStream.bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        val trimmed = line.trim()
+                        if (!trimmed.startsWith("data:")) continue
+                        val raw = trimmed.removePrefix("data:").trim()
+                        if (raw.isEmpty() || raw == "[DONE]") continue
+                        val payload = if (config.streamCipherKey.isNotEmpty() && StreamCipher.isFrame(raw)) {
+                            runCatching { StreamCipher.openFrame(raw, config.streamCipherKey) }
+                                .getOrElse {
+                                    onEvent(AiEvent.Failed("流解密失败：${it.message}"))
+                                    return
+                                }
+                        } else {
+                            raw
+                        }
+                        parseChunk(payload, wrapped)
+                    }
+                }
+                onEvent(AiEvent.Done)
+                return
+            } catch (t: Throwable) {
+                lastError = t.message ?: t.javaClass.simpleName
+                if (emitted || attempt == 2) {
+                    onEvent(AiEvent.Failed(lastError))
+                    return
+                }
+            } finally {
+                if (active === connection) active = null
+                runCatching { connection?.disconnect() }
+            }
+        }
+        onEvent(AiEvent.Failed(lastError.ifBlank { "网络中断" }))
     }
 
     /** 连通性自检：发一条极短请求，确认 Key / 模型 / 网关可用 */
