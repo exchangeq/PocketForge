@@ -33,6 +33,9 @@ data class AppConfig(
     // 发行版远程更新 + GitHub 访问
     val updateRepo: String = "exchangeq/PocketForge",
     val githubToken: String = "",
+    // 生图：兼容 OpenAI /v1/images/generations 的模型与尺寸
+    val imageModel: String = "gpt-image-1",
+    val imageSize: String = "1024x1024",
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -61,6 +64,8 @@ data class AppConfig(
         put("termuxHostKey", termuxHostKey)
         put("updateRepo", updateRepo)
         put("githubToken", githubToken)
+        put("imageModel", imageModel)
+        put("imageSize", imageSize)
     }
 
     fun endpoint(): String {
@@ -107,6 +112,8 @@ data class AppConfig(
             termuxHostKey = raw.optString("termuxHostKey", ""),
             updateRepo = raw.optString("updateRepo", "exchangeq/PocketForge"),
             githubToken = raw.optString("githubToken", ""),
+            imageModel = raw.optString("imageModel", "gpt-image-1"),
+            imageSize = raw.optString("imageSize", "1024x1024"),
         )
     }
 }
@@ -185,6 +192,7 @@ data class MsgUi(
     val steps: List<StepUi> = emptyList(),
     val streaming: Boolean = false,
     val error: String? = null,
+    val imagePath: String? = null,
 )
 
 data class PlanItem(val text: String, val done: Boolean = false)
