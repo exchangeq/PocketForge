@@ -32,6 +32,7 @@
 | 进入已有项目继续做 | `project-progress.md` | PROGRESS.md、交接说明 |
 | 任何交付都要"高质、能直接用" | `quality-output.md` | 自检清单、反 AI 味 |
 | 用户上传了文档/资料 | `document-ingest.md` | 事实清单、分段读取 |
+| 要出图（海报/立绘/封面/图标） | `image-generation.md` | assets/images/ 下的图 |
 | 关卡与难度 | `level-design.md` | 关卡表、难度曲线 |
 | 数值平衡 | `balance-design.md` | balance.csv、模拟结论 |
 | 存档系统 | `save-load.md` | 存档结构、迁移函数 |
