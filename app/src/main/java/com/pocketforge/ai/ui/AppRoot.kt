@@ -308,6 +308,7 @@ fun AppRoot() {
                         msg
                     },
                     onCopyTranscript = { engine.copyTranscript() },
+                    onGenerateImage = { prompt, size -> withContext(Dispatchers.IO) { engine.generateImage(prompt, size) } },
                     pendingTask = engine.pendingTask(),
                     onResumePending = {
                         val goal = engine.pendingTask()
