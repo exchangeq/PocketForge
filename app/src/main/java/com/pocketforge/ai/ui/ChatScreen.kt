@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,6 +105,10 @@ fun ChatScreen(
     onResumePending: () -> Unit = {},
     onDiscardPending: () -> Unit = {},
     onGenerateImage: suspend (String, String) -> String = { _, _ -> "" },
+    tabs: List<Pair<String, String>> = emptyList(),
+    activeKey: String = "",
+    onSelectTab: (String) -> Unit = {},
+    onNewTab: () -> Unit = {},
     onOpenSettings: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
@@ -159,6 +165,28 @@ fun ChatScreen(
             )
             TextButton(onClick = onSwitchSession, contentPadding = PaddingValues(horizontal = 6.dp)) {
                 Text("切换", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (tabs.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items(tabs.size) { index ->
+                    val (key, title) = tabs[index]
+                    FilterChip(
+                        selected = key == activeKey,
+                        onClick = { if (key != activeKey) onSelectTab(key) },
+                        label = { Text(title.take(8), fontSize = 11.sp) },
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
+                item {
+                    TextButton(onClick = onNewTab, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Text("＋ 新页", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
         }
         pendingTask?.let { goal ->
@@ -471,7 +499,15 @@ private fun MessageRow(
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 message.imagePath?.let { path ->
-                    val bmp = remember(path) { runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
+                    val bmp = remember(path) {
+                        runCatching {
+                            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeFile(path, opts)
+                            var sample = 1
+                            while (opts.outWidth / sample > 1600) sample *= 2
+                            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+                        }.getOrNull()
+                    }
                     if (bmp != null) {
                         Image(
                             bitmap = bmp.asImageBitmap(),
