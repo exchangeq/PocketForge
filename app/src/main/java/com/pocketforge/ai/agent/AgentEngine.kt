@@ -748,6 +748,20 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     fun currentVersion(): String = updater.currentVersion()
 
+    // ---------------- 下载器接管 ----------------
+
+    private val uiPrefs get() = appContext.getSharedPreferences("pf-prefs", Context.MODE_PRIVATE)
+
+    fun downloaderPackage(): String? = updater.downloaderPackage()
+
+    fun useDownloader(): Boolean = uiPrefs.getBoolean("use_downloader", true)
+
+    fun setUseDownloader(on: Boolean) {
+        uiPrefs.edit().putBoolean("use_downloader", on).apply()
+    }
+
+    fun handoffUpdate(): String = updater.handoffUpdate()
+
     /** 会话导出为 Markdown，落在工作区 exports/ */
     fun exportSession(): String = runCatching {
         val ws = sandbox.workspace()
@@ -812,6 +826,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     fun downloadAndInstallUpdate(onProgress: (Int, String) -> Unit): String = runCatching {
+        val pkg = updater.downloaderPackage()
+        if (pkg != null && useDownloader()) return@runCatching updater.handoffUpdate()
         val file = updater.download { percent, text -> onProgress(percent, text) }
         updater.verify(file)?.let { return@runCatching "校验未通过：$it" }
         updater.install(file)
