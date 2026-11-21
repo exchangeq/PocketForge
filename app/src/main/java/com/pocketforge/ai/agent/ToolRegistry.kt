@@ -31,6 +31,9 @@ class ToolRegistry(
     private val updateCheck: () -> String = { "更新模块未接入" },
     private val updateInstall: () -> String = { "更新模块未接入" },
     private val projectScopeProvider: () -> File? = { null },
+    private val imageGenerate: (String, String, String) -> ToolResult = { _, _, _ ->
+        ToolResult(false, "生图未接入")
+    },
 ) {
 
     private val locks = DocLocks { runCatching { sandbox.workspace() }.getOrNull() }
@@ -59,10 +62,12 @@ class ToolRegistry(
             "update_check" to "检查新版本",
             "update_install" to "下载并安装新版",
             "download_handoff" to "交给下载器下载",
+            "image_generate" to "生成图片",
+            "image_gen" to "生成图片",
         )
 
         private val WRITE_TOOLS = setOf(
-            "fs_write", "fs_mkdir", "fs_move", "fs_delete", "project_new", "termux_exec"
+            "fs_write", "fs_mkdir", "fs_move", "fs_delete", "project_new", "termux_exec", "image_gen"
         )
 
         fun label(name: String): String = LABELS[name] ?: name
@@ -102,11 +107,29 @@ class ToolRegistry(
                 "update_check" -> ToolResult(true, updateCheck())
                 "update_install" -> ToolResult(true, updateInstall())
                 "download_handoff" -> downloadHandoff(args)
+                "image_generate" -> imageGenerate(
+                    args.optString("prompt").trim(),
+                    args.optString("size", "").trim(),
+                    args.optString("model", "").trim(),
+                )
+                "image_gen" -> imageGen(args)
                 else -> ToolResult(false, "未知工具：$name")
             }
         } catch (t: Throwable) {
             ToolResult(false, "执行失败：${t.message ?: t.javaClass.simpleName}")
         }
+    }
+
+    private fun imageGen(args: JSONObject): ToolResult {
+        val prompt = args.optString("prompt").trim()
+        require(prompt.isNotEmpty()) { "缺少参数 prompt" }
+        val n = args.optInt("n", 1).coerceIn(1, 4)
+        val size = args.optString("size", configProvider().imageSize).ifBlank { "1024x1024" }
+        val scope = projectScopeProvider()
+        val outDir = if (scope != null) File(scope, "assets/images") else File(sandbox.workspace(), "assets/images")
+        val result = com.pocketforge.ai.core.ImageClient().generate(configProvider(), prompt, size, n, outDir)
+        val rel = result.files.joinToString("\n") { sandbox.relative(it) }
+        return ToolResult(true, result.message, rel)
     }
 
     private fun downloadHandoff(args: JSONObject): ToolResult {
@@ -1247,7 +1270,29 @@ class Storage(private val root: File) {
             )
         )
         arr.put(fn("update_check", "检查 GitHub Release 是否有新版本（读 updateRepo 配置）。", JSONObject(), emptyList()))
+        arr.put(
+            fn(
+                "image_gen",
+                "按提示词生成图片（OpenAI 兼容 /v1/images/generations），落盘到 assets/images 或项目 assets/images。",
+                JSONObject()
+                    .put("prompt", prop("string", "画面描述，写清主体、构图、光线、风格、文字内容"))
+                    .put("size", prop("string", "尺寸，如 1024x1024 / 1536x1024"))
+                    .put("n", prop("integer", "张数，1-4，默认 1")),
+                listOf("prompt"),
+            )
+        )
         arr.put(fn("update_install", "下载最新 release APK，校验包名与签名后拉起系统安装器。", JSONObject(), emptyList()))
+        arr.put(
+            fn(
+                "image_generate",
+                "按提示词生成图片，保存到工作区 assets/images/，并把结果贴进对话。支持 OpenAI 兼容 /v1/images/generations。",
+                JSONObject()
+                    .put("prompt", prop("string", "完整提示词：主体+动作+场景+光线+风格+构图"))
+                    .put("size", prop("string", "尺寸，如 1024x1024 / 1024x1536 / 1536x1024"))
+                    .put("model", prop("string", "图片模型，留空用设置里的")),
+                listOf("prompt"),
+            )
+        )
         arr.put(
             fn(
                 "download_handoff",
