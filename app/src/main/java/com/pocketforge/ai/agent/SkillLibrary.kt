@@ -74,6 +74,7 @@ class SkillLibrary(private val context: Context) {
             "document-ingest.md" to "读取用户上传文档：分段与事实清单",
             "syntax-kotlin.md" to "Kotlin/Compose/Gradle 语法重点与高频编译坑",
             "project-progress.md" to "项目进度协议：先读 PROGRESS.md 再动手",
+            "image-generation.md" to "生图规范：提示词结构、尺寸、数量门禁",
         )
 
         const val FORCE_MARK = ".force"
