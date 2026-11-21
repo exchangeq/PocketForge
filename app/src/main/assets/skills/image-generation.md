@@ -1,7 +1,8 @@
 # image-generation.md · 生图规范（image_generate）
 
-> 用于 App 内的 `image_generate` 工具，走 OpenAI 兼容 `/v1/images/generations`。
-> 生成即落盘 `assets/images/`，并把图贴回对话；项目里可当素材直接用。
+> 默认走 **Pollinations 免费通道**（`https://image.pollinations.ai`，不用 Key、不耗额度），
+> 模型 `flux`（画质最好）/ `turbo`（更快）；需要自有模型时在设置里切「OpenAI 兼容」。
+> 生成即落盘 `assets/images/`，同时写 `meta.jsonl`（提示词、尺寸、通道），图库页可直接复用。
 
 ## 1. 提示词结构（缺一项都会画偏）
 
@@ -28,6 +29,7 @@
 | 横版头图 / 视频封面 | `1536x1024` |
 
 工具参数：`{"prompt": "...", "size": "1024x1536", "model": ""}`，model 留空用设置里的。
+免费通道下 model 只建议 `flux` / `turbo`，别填 `gpt-image-1`（会被自动纠正成 flux）。
 
 ## 3. 数量门禁（硬规则）
 
