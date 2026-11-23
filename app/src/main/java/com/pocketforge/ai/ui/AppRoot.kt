@@ -480,6 +480,18 @@ fun AppRoot() {
                     onFetch = { id -> withContext(Dispatchers.IO) { engine.fetchPersonaPack(id) } },
                     onImport = { uri -> withContext(Dispatchers.IO) { engine.importPersonaZip(uri) } },
                     onRefreshCurrent = { persona = engine.persona() },
+                    onStartChat = { n, raw ->
+                        val title = n + " · 人设对话 " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                        val key = engine.newSession(title)
+                        engine.createPersona(n, "", "", "", "", raw)
+                        persona = engine.persona()
+                        openTabs = pushTab(openTabs, key, title)
+                        activeKey = key
+                        writeTabs(prefs, openTabs)
+                        sessionList = engine.sessions()
+                        tab = 0
+                    },
+                    onOpenChat = { tab = 0 },
                 )
 
                 else -> SettingsScreen(
