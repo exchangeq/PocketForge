@@ -238,7 +238,7 @@ fun ChatScreen(
                         selected = key == activeKey,
                         onClick = { if (key != activeKey) onSelectTab(key) },
                         label = {
-                            val short = if (title.startsWith("新对话")) title.removePrefix("新对话").trim().take(8).ifBlank { "新对话" } else title.take(8)
+                            val short = if (title.startsWith("新对话")) title.removePrefix("新对话").trim().take(8).ifBlank { "新对话" } else title.replace("人设对话 ", "").replace("对话 ", "").take(11)
                             Text(short, fontSize = 11.sp)
                         },
                         modifier = Modifier.padding(vertical = 2.dp),
@@ -596,6 +596,7 @@ fun ChatScreen(
         Composer(
             value = input,
             onValueChange = { input = it },
+            placeholder = if (persona != null) "和 " + persona.name + " 说点什么…" else "描述目标，AI 会先读技能再动手…",
             onAttach = { attachLauncher.launch(arrayOf("text/plain", "text/markdown", "application/json", "*/*")) },
             busy = state.busy,
             onSend = {
@@ -1054,6 +1055,7 @@ private fun StepCard(index: Int, step: StepUi) {
 private fun Composer(
     value: String,
     onValueChange: (String) -> Unit,
+    placeholder: String = "描述目标，AI 会先读技能再动手…",
     busy: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -1097,7 +1099,7 @@ private fun Composer(
                             Box {
                                 if (value.isEmpty()) {
                                     Text(
-                                        "描述目标，AI 会先读技能再动手…",
+                                        placeholder,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     )
