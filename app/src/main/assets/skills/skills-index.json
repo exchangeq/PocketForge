@@ -1,13 +1,13 @@
 {
-  "version": 9,
-  "updated": "2026-11-21",
-  "count": 55,
+  "version": 10,
+  "updated": "2026-11-23",
+  "count": 56,
   "skills": [
     {
       "name": "SKILLS.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/SKILLS.md",
-      "sha256": "c03e29461cfedea319cabf67908a03dfe56dec53334e5644a446778d7722b263",
-      "bytes": 8426
+      "sha256": "b6f64096f1e0c1b2a0493dc3c887d5aced8856b4e572e529641325f3d8bd860f",
+      "bytes": 8505
     },
     {
       "name": "accessibility-i18n.md",
@@ -200,6 +200,12 @@
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/performance.md",
       "sha256": "9b21d9f8c257598b50f7c79d8b520f735fecfb4d21c2b6f9a256d24c178e4fc5",
       "bytes": 768
+    },
+    {
+      "name": "persona-lock.md",
+      "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/persona-lock.md",
+      "sha256": "c77d3538764a38f09b56c63c34820123c231e169cc06afc5b519ef302e605517",
+      "bytes": 1728
     },
     {
       "name": "pixel-art.md",
