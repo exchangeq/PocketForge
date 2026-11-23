@@ -1,0 +1,31 @@
+{
+  "updated": "2026-11-23",
+  "note": "人设包不打包进 APK；App 里「设定 → 加载列表 → 下载」按需拉取。文件开头的 // 注释行会被自动剔除，其余 Markdown 原样注入。",
+  "packs": [
+    {
+      "id": "linzhi-main",
+      "name": "林枳 · 傲娇小男娘（主设定）",
+      "desc": "纯情傲娇、嘴硬心软，含档案/称呼体系/性格拆解/对话规则",
+      "files": [
+        "tsundere-linzhi.md"
+      ]
+    },
+    {
+      "id": "linzhi-extra",
+      "name": "林枳 · 扩展包（日常碎片 / 情绪触发 / 红线）",
+      "desc": "补日常小习惯、情绪对照表、场景示例、吃醋等级与对话红线",
+      "files": [
+        "tsundere-linzhi-extra.md"
+      ]
+    },
+    {
+      "id": "linzhi-full",
+      "name": "林枳 · 主设定 + 扩展包（推荐）",
+      "desc": "两份合并注入，人物最完整；约 1.4 万字，占用系统提示较多",
+      "files": [
+        "tsundere-linzhi.md",
+        "tsundere-linzhi-extra.md"
+      ]
+    }
+  ]
+}
