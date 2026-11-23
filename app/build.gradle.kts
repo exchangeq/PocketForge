@@ -14,8 +14,8 @@ android {
         applicationId = "com.pocketforge.ai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 19
-        versionName = "1.16.0"
+        versionCode = 20
+        versionName = "1.17.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
