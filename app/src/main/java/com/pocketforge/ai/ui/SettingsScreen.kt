@@ -108,6 +108,7 @@ fun SettingsScreen(
     var workspaceRoot by remember(config) { mutableStateOf(config.workspaceRoot) }
     var cipherKey by remember(config) { mutableStateOf(config.streamCipherKey) }
     var systemExtra by remember(config) { mutableStateOf(config.systemExtra) }
+    var personaRepo by remember(config) { mutableStateOf(config.personaRepo) }
     var stream by remember(config) { mutableStateOf(config.stream) }
     var skillsGate by remember(config) { mutableStateOf(config.skillsGate) }
     var skillRepoUrl by remember(config) { mutableStateOf(config.skillRepoUrl) }
@@ -149,6 +150,7 @@ fun SettingsScreen(
         workspaceRoot = workspaceRoot.trim(),
         streamCipherKey = cipherKey.trim(),
         systemExtra = systemExtra,
+        personaRepo = personaRepo.trim().ifEmpty { "exchangeq/PocketForge-Personas" },
         stream = stream,
         skillsGate = skillsGate,
         skillRepoUrl = skillRepoUrl.trim(),
@@ -207,6 +209,16 @@ fun SettingsScreen(
                 modifier = Modifier.weight(0.6f),
             )
         }
+        Text("人设包仓库（owner/repo）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = personaRepo,
+            onValueChange = { personaRepo = it },
+            label = { Text("人设包仓库") },
+            singleLine = true,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth(),
+            supportingText = { Text("zip 内含 AI.md；改了仓库名后去对话页点「加载列表」重新拉", fontSize = 9.5.sp) },
+        )
         Text("生图通道", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             androidx.compose.material3.FilterChip(
