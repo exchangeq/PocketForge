@@ -269,7 +269,20 @@ fun ChatScreen(
         }
         if (!hasApiKey) SetupCard(onOpenSettings)
         if (!hasStorage) StorageBanner(onRequestStorage)
-        PlanCard(state.plan)
+        if (persona != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+            ) {
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("以 " + persona.name + " 的身份对话 · 已锁定", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showPersonaDialog = true }, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("查看设定", fontSize = 10.sp) }
+                }
+            }
+        } else {
+            PlanCard(state.plan)
+        }
 
         if (showPersonaDialog) {
             androidx.compose.ui.window.Dialog(
