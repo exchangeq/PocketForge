@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "updated": "2026-11-23",
   "count": 56,
   "skills": [
@@ -204,8 +204,8 @@
     {
       "name": "persona-lock.md",
       "url": "https://raw.githubusercontent.com/exchangeq/PocketForge/main/app/src/main/assets/skills/persona-lock.md",
-      "sha256": "80149abe2bffde55fa84ba30a3a7e04a1eb0d6d78a435dd9413fc11fbc46a6e6",
-      "bytes": 2242
+      "sha256": "846eb3143a44b4458ef6b6340569569b607725fb029e200347b9106b520e781d",
+      "bytes": 2272
     },
     {
       "name": "pixel-art.md",
