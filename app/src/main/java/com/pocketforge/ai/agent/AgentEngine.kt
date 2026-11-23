@@ -865,9 +865,8 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             o.optJSONArray("files")?.let { fa -> for (j in 0 until fa.length()) files.add(fa.optString(j)) }
             val single = o.optString("file").ifBlank { o.optString("zip") }
             if (files.isEmpty() && single.isNotBlank()) files.add(single)
-            val fmt = o.optString("format").ifBlank {
-                if (single.endsWith(".zip", true)) "zip" else "md"
-            }
+            val isArchive = single.endsWith(".zip", true) || single.endsWith(".aist", true)
+            val fmt = o.optString("format").ifBlank { if (isArchive) "zip" else "md" }
             val id = o.optString("id").ifBlank { "pack-$i" }
             val type = o.optString("type").ifBlank {
                 if (o.optString("name").contains("扩展包")) "extension" else "main"
@@ -880,7 +879,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                     files = files,
                     group = o.optString("group", id.substringBefore('-')),
                     type = type,
-                    zip = if (fmt == "zip") single else o.optString("zip"),
+                    zip = if (fmt == "zip" || isArchive) single else o.optString("zip"),
                     extCount = o.optInt("extCount", 0),
                 )
             )
