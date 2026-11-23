@@ -76,6 +76,7 @@ class SkillLibrary(private val context: Context) {
             "project-progress.md" to "项目进度协议：先读 PROGRESS.md 再动手",
             "image-generation.md" to "生图规范：提示词结构、尺寸、数量门禁",
             "network-stability.md" to "弱网与断线：错误分型、已做的加固、回复模板",
+            "persona-lock.md" to "人物设定锁定：强制遵守、禁止改写、冲突顺序",
         )
 
         const val FORCE_MARK = ".force"
