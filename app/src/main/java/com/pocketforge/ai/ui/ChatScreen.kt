@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -105,6 +108,13 @@ fun ChatScreen(
     onResumePending: () -> Unit = {},
     onDiscardPending: () -> Unit = {},
     onGenerateImage: suspend (String, String) -> String = { _, _ -> "" },
+    persona: com.pocketforge.ai.data.PersonaStore.Persona? = null,
+    onCreatePersona: (String, String, String, String, String, String) -> String = { _, _, _, _, _, _ -> "" },
+    packs: List<com.pocketforge.ai.agent.AgentEngine.PersonaPack> = emptyList(),
+    onLoadPacks: suspend () -> List<com.pocketforge.ai.agent.AgentEngine.PersonaPack> = { emptyList() },
+    onFetchPack: suspend (String) -> com.pocketforge.ai.agent.AgentEngine.PersonaPackContent = {
+        com.pocketforge.ai.agent.AgentEngine.PersonaPackContent("", "", 0)
+    },
     tabs: List<Pair<String, String>> = emptyList(),
     activeKey: String = "",
     onSelectTab: (String) -> Unit = {},
@@ -115,6 +125,17 @@ fun ChatScreen(
     val noRecall = state.noRecall
     var editing by remember { mutableStateOf<MsgUi?>(null) }
     var showImageDialog by remember { mutableStateOf(false) }
+    var showPersonaDialog by remember { mutableStateOf(false) }
+    var pName by remember { mutableStateOf("") }
+    var pRole by remember { mutableStateOf("") }
+    var pStyle by remember { mutableStateOf("") }
+    var pQuirks by remember { mutableStateOf("") }
+    var pTaboo by remember { mutableStateOf("") }
+    var personaMsg by remember { mutableStateOf("") }
+    var packList by remember { mutableStateOf(packs) }
+    var packRaw by remember { mutableStateOf("") }
+    var packName by remember { mutableStateOf("") }
+    var packBusy by remember { mutableStateOf(false) }
     var imagePrompt by remember { mutableStateOf("") }
     var imageSize by remember { mutableStateOf("1024x1024") }
     var editText by remember { mutableStateOf("") }
@@ -163,8 +184,25 @@ fun ChatScreen(
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
+            TextButton(onClick = { showPersonaDialog = true }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text(if (persona == null) "设定" else "设定·已锁", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.primary)
+            }
             TextButton(onClick = onSwitchSession, contentPadding = PaddingValues(horizontal = 6.dp)) {
                 Text("切换", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        persona?.let { p ->
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+            ) {
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("人物设定", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                    Text(p.name, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text("已锁定", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
         if (tabs.isNotEmpty()) {
@@ -208,6 +246,115 @@ fun ChatScreen(
         if (!hasApiKey) SetupCard(onOpenSettings)
         if (!hasStorage) StorageBanner(onRequestStorage)
         PlanCard(state.plan)
+
+        if (showPersonaDialog) {
+            AlertDialog(
+                onDismissRequest = { showPersonaDialog = false },
+                title = { Text(if (persona == null) "写入人物设定（不可更改）" else "人物设定 · 已锁定", fontSize = 14.sp) },
+                text = {
+                    Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                        val p = persona
+                        if (p == null) {
+                            Text(
+                                "写入后绑定在本对话，AI 每轮强制遵守，且不支持修改或删除。想换人设只能新建一个对话页。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("仓库人设包（不内置，现下现用）", fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        packBusy = true
+                                        packList = runCatching { withContext(Dispatchers.IO) { onLoadPacks() } }.getOrElse {
+                                            personaMsg = "人设包列表加载失败：" + (it.message ?: "网络错误")
+                                            packList
+                                        }
+                                        packBusy = false
+                                    }
+                                }, enabled = !packBusy) { Text(if (packBusy) "加载中…" else "加载列表", fontSize = 10.5.sp) }
+                            }
+                            packList.forEach { pack ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(pack.name, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                                        if (pack.desc.isNotBlank()) Text(pack.desc, fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                    }
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            packBusy = true
+                                            runCatching { withContext(Dispatchers.IO) { onFetchPack(pack.id) } }
+                                                .onSuccess { c ->
+                                                    packRaw = c.raw
+                                                    packName = c.name
+                                                    pName = c.name
+                                                    personaMsg = "已载入「${c.name}」${c.bytes} 字，确认后点强行写入"
+                                                }
+                                                .onFailure { personaMsg = "下载失败：" + (it.message ?: "网络错误") }
+                                            packBusy = false
+                                        }
+                                    }, enabled = !packBusy) { Text("下载", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
+                                }
+                            }
+                            if (packRaw.isNotBlank()) {
+                                Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), shape = RoundedCornerShape(8.dp)) {
+                                    Text(
+                                        packRaw.take(360) + if (packRaw.length > 360) "…" else "",
+                                        fontSize = 9.5.sp,
+                                        modifier = Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(8.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Text("完整 ${packRaw.length} 字会原样注入（// 注释行已自动剔除）", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(6.dp))
+                            }
+                            OutlinedTextField(value = pName, onValueChange = { pName = it }, label = { Text("名字（必填）", fontSize = 11.sp) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            if (packRaw.isBlank()) {
+                                OutlinedTextField(value = pRole, onValueChange = { pRole = it }, label = { Text("身份 / 角色定位", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = pStyle, onValueChange = { pStyle = it }, label = { Text("说话风格（例：冷淡简短、爱用反问）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = pQuirks, onValueChange = { pQuirks = it }, label = { Text("口头禅 / 习惯", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = pTaboo, onValueChange = { pTaboo = it }, label = { Text("禁忌（绝不做什么）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                            }
+                            if (personaMsg.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(personaMsg, fontSize = 11.sp, color = if (personaMsg.contains("已强行")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            Text("此设定写入即锁定，界面与 AI 都无法修改。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Text("名字：${p.name}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            if (p.role.isNotBlank()) Text("身份：${p.role}", fontSize = 11.sp)
+                            if (p.style.isNotBlank()) Text("说话风格：${p.style}", fontSize = 11.sp)
+                            if (p.quirks.isNotBlank()) Text("口头禅：${p.quirks}", fontSize = 11.sp)
+                            if (p.taboo.isNotBlank()) Text("禁忌：${p.taboo}", fontSize = 11.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text("要换设定：新建一个对话页，在那边写入新的。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (persona == null) {
+                        TextButton(onClick = {
+                            if (pName.isBlank()) {
+                                personaMsg = "名字不能为空"
+                            } else {
+                                val msg = onCreatePersona(pName, pRole, pStyle, pQuirks, pTaboo, packRaw)
+                                personaMsg = msg
+                                if (msg.contains("已强行")) {
+                                    pName = ""; pRole = ""; pStyle = ""; pQuirks = ""; pTaboo = ""; packRaw = ""; packName = ""
+                                    showPersonaDialog = false
+                                }
+                            }
+                        }) { Text("强行写入并锁定") }
+                    } else {
+                        TextButton(onClick = { showPersonaDialog = false }) { Text("知道了") }
+                    }
+                },
+                dismissButton = {
+                    if (persona == null) TextButton(onClick = { showPersonaDialog = false }) { Text("取消") }
+                },
+            )
+        }
 
         LazyColumn(
             modifier = Modifier
