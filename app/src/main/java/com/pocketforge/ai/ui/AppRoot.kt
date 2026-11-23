@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -169,8 +170,8 @@ fun AppRoot() {
             busy = state.busy,
             hasKey = hasKey,
             updateTag = updateTag,
-            onOpenSettings = { tab = 3 },
-            onUpdateClick = { tab = 3 },
+            onOpenSettings = { tab = 4 },
+            onUpdateClick = { tab = 4 },
         )
 
         if (updateTag != null && !updateDismissed) {
@@ -181,7 +182,7 @@ fun AppRoot() {
                     Text("当前 ${engine.currentVersion()}，可升级到 ${updateTag}。\n\n更新包会先校验签名，不符会拒绝安装，不会装进别的应用。")
                 },
                 confirmButton = {
-                    TextButton(onClick = { updateDismissed = true; tab = 3 }) { Text("去更新") }
+                    TextButton(onClick = { updateDismissed = true; tab = 4 }) { Text("去更新") }
                 },
                 dismissButton = {
                     TextButton(onClick = { updateDismissed = true }) { Text("稍后") }
@@ -269,8 +270,9 @@ fun AppRoot() {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val key = engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
-                        openTabs = pushTab(openTabs, key, "新对话")
+                        val title = "新对话 " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                        val key = engine.newSession(title)
+                        openTabs = pushTab(openTabs, key, title)
                         activeKey = key
                         writeTabs(prefs, openTabs)
                         sessionList = engine.sessions()
@@ -344,7 +346,7 @@ fun AppRoot() {
                     },
                     onFetchPack = { id -> withContext(Dispatchers.IO) { engine.fetchPersonaPack(id) } },
                     onImportZip = { uri -> withContext(Dispatchers.IO) { engine.importPersonaZip(uri) } },
-                    tabs = openTabs,
+                    tabs = openTabs.map { (k, _) -> k to engine.sessionTitleOf(k) },
                     activeKey = activeKey,
                     onSelectTab = { key ->
                         if (engine.switchSession(key)) {
@@ -353,8 +355,9 @@ fun AppRoot() {
                         }
                     },
                     onNewTab = {
-                        val key = engine.newSession("新对话 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
-                        openTabs = pushTab(openTabs, key, "新对话")
+                        val title = "新对话 " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                        val key = engine.newSession(title)
+                        openTabs = pushTab(openTabs, key, title)
                         activeKey = key
                         writeTabs(prefs, openTabs)
                         sessionList = engine.sessions()
@@ -376,7 +379,7 @@ fun AppRoot() {
                             }
                         }
                     },
-                    onOpenSettings = { tab = 3 },
+                    onOpenSettings = { tab = 4 },
                 )
 
                 1 -> ProjectScreen(
@@ -459,6 +462,24 @@ fun AppRoot() {
                     },
                     onRefreshGallery = { gallery = engine.gallery() },
                     onDelete = { path -> engine.deleteImage(path) },
+                )
+
+                3 -> PersonaScreen(
+                    current = persona,
+                    packsInitial = personaPacks,
+                    onCreate = { n, r, st, q, t, raw ->
+                        val msg = engine.createPersona(n, r, st, q, t, raw)
+                        persona = engine.persona()
+                        msg
+                    },
+                    onLoad = { force ->
+                        val list = withContext(Dispatchers.IO) { engine.personaPacks(force) }
+                        personaPacks = list
+                        list
+                    },
+                    onFetch = { id -> withContext(Dispatchers.IO) { engine.fetchPersonaPack(id) } },
+                    onImport = { uri -> withContext(Dispatchers.IO) { engine.importPersonaZip(uri) } },
+                    onRefreshCurrent = { persona = engine.persona() },
                 )
 
                 else -> SettingsScreen(
@@ -666,7 +687,8 @@ private fun BottomTabs(current: Int, onSelect: (Int) -> Unit) {
         Triple("对话", Icons.Default.MailOutline, 0),
         Triple("项目", Icons.Default.List, 1),
         Triple("画图", Icons.Default.AddCircle, 2),
-        Triple("设置", Icons.Default.Settings, 3),
+        Triple("人设", Icons.Default.Face, 3),
+        Triple("设置", Icons.Default.Settings, 4),
     )
     Column {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
