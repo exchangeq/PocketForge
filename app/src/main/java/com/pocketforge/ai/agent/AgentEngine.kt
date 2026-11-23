@@ -176,6 +176,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
                 com.pocketforge.ai.service.KeepAliveService.start(appContext)
             }
         }
+        clearPendingTask()
         markPending(input)
         history.add(ChatMessage(role = "user", content = input))
         _ui.update {
@@ -493,6 +494,9 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     }
 
     fun currentSessionKey(): String = sessionKey
+
+    fun sessionTitleOf(key: String): String =
+        sessionStore.title(key, if (key == "main") "主对话" else "新对话")
 
     fun currentSessionTitle(): String = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey)
 
@@ -1049,17 +1053,38 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
             .trim()
 
     private fun httpGetBytes(url: String, timeoutMs: Int): ByteArray {
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        return try {
-            conn.connectTimeout = 12_000
-            conn.readTimeout = timeoutMs
-            conn.setRequestProperty("User-Agent", "PocketForge/1.14 (Android)")
-            val code = conn.responseCode
-            if (code !in 200..299) throw IllegalStateException("HTTP $code：$url")
-            conn.inputStream.use { it.readBytes() }
-        } finally {
-            runCatching { conn.disconnect() }
+        val candidates = mutableListOf(url)
+        // GitHub raw 在国内经常抽风：自动换 jsDelivr 镜像再试一次
+        if (url.contains("raw.githubusercontent.com/")) {
+            val rest = url.substringAfter("raw.githubusercontent.com/")
+            val parts = rest.split("/", limit = 4)
+            if (parts.size == 4) {
+                val owner = parts[0]; val repo = parts[1]; val branch = parts[2]; val path = parts[3]
+                candidates.add("https://cdn.jsdelivr.net/gh/$owner/$repo@$branch/$path")
+                candidates.add("https://fastly.jsdelivr.net/gh/$owner/$repo@$branch/$path")
+            }
         }
+        var lastError = ""
+        for (candidate in candidates) {
+            var conn: java.net.HttpURLConnection? = null
+            try {
+                conn = java.net.URL(candidate).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 12_000
+                conn.readTimeout = timeoutMs
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("User-Agent", "PocketForge/1.16 (Android)")
+                conn.setRequestProperty("Accept", "*/*")
+                val code = conn.responseCode
+                if (code !in 200..299) throw IllegalStateException("HTTP $code")
+                return conn.inputStream.use { it.readBytes() }
+            } catch (t: Throwable) {
+                lastError = t.message ?: t.javaClass.simpleName
+                runCatching { conn?.disconnect() }
+            } finally {
+                runCatching { conn?.disconnect() }
+            }
+        }
+        throw IllegalStateException("下载失败（raw + CDN 都不通）：$lastError")
     }
 
     private fun httpGet(url: String, timeoutMs: Int): String = httpGetBytes(url, timeoutMs).toString(Charsets.UTF_8)
