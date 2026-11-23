@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -115,6 +116,9 @@ fun ChatScreen(
     onFetchPack: suspend (String) -> com.pocketforge.ai.agent.AgentEngine.PersonaPackContent = {
         com.pocketforge.ai.agent.AgentEngine.PersonaPackContent("", "", 0)
     },
+    onImportZip: suspend (android.net.Uri) -> com.pocketforge.ai.agent.AgentEngine.PersonaPackContent = {
+        com.pocketforge.ai.agent.AgentEngine.PersonaPackContent("", "", 0)
+    },
     tabs: List<Pair<String, String>> = emptyList(),
     activeKey: String = "",
     onSelectTab: (String) -> Unit = {},
@@ -136,6 +140,7 @@ fun ChatScreen(
     var packRaw by remember { mutableStateOf("") }
     var packName by remember { mutableStateOf("") }
     var packBusy by remember { mutableStateOf(false) }
+    var zipBusy by remember { mutableStateOf(false) }
     var imagePrompt by remember { mutableStateOf("") }
     var imageSize by remember { mutableStateOf("1024x1024") }
     var editText by remember { mutableStateOf("") }
@@ -159,6 +164,22 @@ fun ChatScreen(
                 }
                 if (text == null) input = input + "\n（附件太大或不是文本，未读取；请控制在 200KB 内的 txt/md）"
                 else input = (input + "\n" + text).trim()
+            }
+        }
+    }
+    val zipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                zipBusy = true
+                runCatching { withContext(Dispatchers.IO) { onImportZip(uri) } }
+                    .onSuccess { c ->
+                        packRaw = c.raw
+                        packName = c.name
+                        pName = if (pName.isBlank()) c.name else pName
+                        personaMsg = "ZIP 已解压：${c.parts} 个文件，共 ${c.bytes} 字（// 注释已剔除），确认后点强行写入"
+                    }
+                    .onFailure { personaMsg = "ZIP 导入失败：" + (it.message ?: "读不出来") }
+                zipBusy = false
             }
         }
     }
@@ -248,112 +269,248 @@ fun ChatScreen(
         PlanCard(state.plan)
 
         if (showPersonaDialog) {
-            AlertDialog(
+            androidx.compose.ui.window.Dialog(
                 onDismissRequest = { showPersonaDialog = false },
-                title = { Text(if (persona == null) "写入人物设定（不可更改）" else "人物设定 · 已锁定", fontSize = 14.sp) },
-                text = {
-                    Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
-                        val p = persona
-                        if (p == null) {
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column(Modifier.fillMaxSize()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
-                                "写入后绑定在本对话，AI 每轮强制遵守，且不支持修改或删除。想换人设只能新建一个对话页。",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                if (persona == null) "写入人物设定（不可更改）" else "人物设定 · 已锁定",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f),
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("仓库人设包（不内置，现下现用）", fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        packBusy = true
-                                        packList = runCatching { withContext(Dispatchers.IO) { onLoadPacks() } }.getOrElse {
-                                            personaMsg = "人设包列表加载失败：" + (it.message ?: "网络错误")
-                                            packList
-                                        }
-                                        packBusy = false
-                                    }
-                                }, enabled = !packBusy) { Text(if (packBusy) "加载中…" else "加载列表", fontSize = 10.5.sp) }
-                            }
-                            packList.forEach { pack ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(pack.name, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
-                                        if (pack.desc.isNotBlank()) Text(pack.desc, fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                                    }
+                            TextButton(onClick = { showPersonaDialog = false }) { Text("关闭", fontSize = 11.sp) }
+                        }
+
+                        Column(
+                            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                        ) {
+                            val p = persona
+                            if (p == null) {
+                                Text(
+                                    "写入后绑定在本对话，AI 每轮强制遵守，且不支持修改或删除。想换人设只能新建一个对话页。",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(10.dp))
+
+                                Text("① 从仓库选包（不内置，现下现用）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        if (packList.isEmpty()) "点右边加载列表；含扩展包的主包会自动合并所有扩展包"
+                                        else "共 ${packList.size} 个包，扩展包会随主包自动合并",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f),
+                                    )
                                     TextButton(onClick = {
                                         scope.launch {
                                             packBusy = true
-                                            runCatching { withContext(Dispatchers.IO) { onFetchPack(pack.id) } }
-                                                .onSuccess { c ->
-                                                    packRaw = c.raw
-                                                    packName = c.name
-                                                    pName = c.name
-                                                    personaMsg = "已载入「${c.name}」${c.bytes} 字，确认后点强行写入"
-                                                }
-                                                .onFailure { personaMsg = "下载失败：" + (it.message ?: "网络错误") }
+                                            packList = runCatching { withContext(Dispatchers.IO) { onLoadPacks() } }.getOrElse {
+                                                personaMsg = "人设包列表加载失败：" + (it.message ?: "网络错误")
+                                                packList
+                                            }
                                             packBusy = false
                                         }
-                                    }, enabled = !packBusy) { Text("下载", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
+                                    }, enabled = !packBusy && !zipBusy) { Text(if (packBusy) "加载中…" else "加载列表", fontSize = 11.sp) }
                                 }
-                            }
-                            if (packRaw.isNotBlank()) {
-                                Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), shape = RoundedCornerShape(8.dp)) {
+                                val visiblePacks = packList.filter { it.type != "extension" }.ifEmpty { packList }
+                                if (visiblePacks.isEmpty()) {
                                     Text(
-                                        packRaw.take(360) + if (packRaw.length > 360) "…" else "",
-                                        fontSize = 9.5.sp,
-                                        modifier = Modifier.heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(8.dp),
+                                        "还没加载到包。点「加载列表」，或直接用下面的本地 ZIP 导入。",
+                                        fontSize = 10.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Text("完整 ${packRaw.length} 字会原样注入（// 注释行已自动剔除）", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(6.dp))
+                                visiblePacks.forEach { pack ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp)
+                                            .clickable(enabled = !packBusy && !zipBusy) {
+                                                scope.launch {
+                                                    packBusy = true
+                                                    runCatching { withContext(Dispatchers.IO) { onFetchPack(pack.id) } }
+                                                        .onSuccess { c ->
+                                                            packRaw = c.raw
+                                                            packName = c.name
+                                                            pName = if (pName.isBlank()) c.name.substringBefore(" ·") else pName
+                                                            personaMsg = "已载入「${c.name}」：${c.parts} 个文件 ${c.bytes} 字（扩展包已自动合并）"
+                                                        }
+                                                        .onFailure { personaMsg = "下载失败：" + (it.message ?: "网络错误") }
+                                                    packBusy = false
+                                                }
+                                            },
+                                    ) {
+                                        Row(
+                                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(pack.name, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                if (pack.desc.isNotBlank()) {
+                                                    Text(
+                                                        pack.desc,
+                                                        fontSize = 9.5.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 2,
+                                                    )
+                                                }
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    if (pack.zip.isNotBlank()) {
+                                                        Text(
+                                                            "ZIP",
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier
+                                                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp))
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        )
+                                                    }
+                                                    if (pack.extCount > 0) {
+                                                        Text(
+                                                            "含 ${pack.extCount} 个扩展包",
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                if (packBusy) "下载中…" else "下载",
+                                                fontSize = 10.5.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+
+                                Text("② 或导入本地 ZIP（.zip，里面有主设定 + 扩展包）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Button(
+                                    onClick = {
+                                        runCatching { zipLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+                                            .onFailure { personaMsg = "系统没有文件选择器" }
+                                    },
+                                    enabled = !zipBusy && !packBusy,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text(if (zipBusy) "解压中…" else "选择 ZIP 人设包", fontSize = 12.sp) }
+                                Text(
+                                    "ZIP 内的 .md 会自动排序：主设定在前，名字带「扩展包 / extra / extension / 补充」的全部排后面合并；// 注释行统一剔除。",
+                                    fontSize = 9.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                if (packRaw.isNotBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("预览（完整 ${packRaw.length} 字，超出 1.6 万字会截断）", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        shape = RoundedCornerShape(8.dp),
+                                    ) {
+                                        Text(
+                                            packRaw.take(500) + if (packRaw.length > 500) "…" else "",
+                                            fontSize = 9.5.sp,
+                                            modifier = Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()).padding(8.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Text("③ 名字与手动设定", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                OutlinedTextField(
+                                    value = pName,
+                                    onValueChange = { pName = it },
+                                    label = { Text("名字（必填）", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (packRaw.isBlank()) {
+                                    OutlinedTextField(value = pRole, onValueChange = { pRole = it }, label = { Text("身份 / 角色定位", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = pStyle, onValueChange = { pStyle = it }, label = { Text("说话风格（例：冷淡简短、爱用反问）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = pQuirks, onValueChange = { pQuirks = it }, label = { Text("口头禅 / 习惯", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = pTaboo, onValueChange = { pTaboo = it }, label = { Text("禁忌（绝不做什么）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                                }
+                                if (personaMsg.isNotBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        personaMsg,
+                                        fontSize = 11.sp,
+                                        color = if (personaMsg.contains("已强行") || personaMsg.contains("已载入") || personaMsg.contains("已解压"))
+                                            MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            } else {
+                                Text("此设定写入即锁定，界面与 AI 都无法修改。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(10.dp))
+                                Text("名字：${p.name}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                if (p.role.isNotBlank()) Text("身份：${p.role}", fontSize = 11.sp)
+                                if (p.style.isNotBlank()) Text("说话风格：${p.style}", fontSize = 11.sp)
+                                if (p.quirks.isNotBlank()) Text("口头禅：${p.quirks}", fontSize = 11.sp)
+                                if (p.taboo.isNotBlank()) Text("禁忌：${p.taboo}", fontSize = 11.sp)
+                                if (p.raw.isNotBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        shape = RoundedCornerShape(8.dp),
+                                    ) {
+                                        Text(
+                                            p.raw.take(600) + if (p.raw.length > 600) "…（共 ${p.raw.length} 字）" else "",
+                                            fontSize = 9.5.sp,
+                                            modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()).padding(8.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Text("要换设定：新建一个对话页，在那边写入新的。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            OutlinedTextField(value = pName, onValueChange = { pName = it }, label = { Text("名字（必填）", fontSize = 11.sp) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            if (packRaw.isBlank()) {
-                                OutlinedTextField(value = pRole, onValueChange = { pRole = it }, label = { Text("身份 / 角色定位", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = pStyle, onValueChange = { pStyle = it }, label = { Text("说话风格（例：冷淡简短、爱用反问）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = pQuirks, onValueChange = { pQuirks = it }, label = { Text("口头禅 / 习惯", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = pTaboo, onValueChange = { pTaboo = it }, label = { Text("禁忌（绝不做什么）", fontSize = 11.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(12.dp))
+                        }
+
+                        HorizontalDivider()
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (persona == null) {
+                                TextButton(onClick = { showPersonaDialog = false }) { Text("取消") }
+                                Button(
+                                    onClick = {
+                                        if (pName.isBlank()) {
+                                            personaMsg = "名字不能为空"
+                                        } else {
+                                            val msg = onCreatePersona(pName, pRole, pStyle, pQuirks, pTaboo, packRaw)
+                                            personaMsg = msg
+                                            if (msg.contains("已强行")) {
+                                                pName = ""; pRole = ""; pStyle = ""; pQuirks = ""; pTaboo = ""
+                                                packRaw = ""; packName = ""
+                                                showPersonaDialog = false
+                                            }
+                                        }
+                                    },
+                                ) { Text("强行写入并锁定") }
+                            } else {
+                                Button(onClick = { showPersonaDialog = false }) { Text("知道了") }
                             }
-                            if (personaMsg.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text(personaMsg, fontSize = 11.sp, color = if (personaMsg.contains("已强行")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-                            }
-                        } else {
-                            Text("此设定写入即锁定，界面与 AI 都无法修改。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(8.dp))
-                            Text("名字：${p.name}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            if (p.role.isNotBlank()) Text("身份：${p.role}", fontSize = 11.sp)
-                            if (p.style.isNotBlank()) Text("说话风格：${p.style}", fontSize = 11.sp)
-                            if (p.quirks.isNotBlank()) Text("口头禅：${p.quirks}", fontSize = 11.sp)
-                            if (p.taboo.isNotBlank()) Text("禁忌：${p.taboo}", fontSize = 11.sp)
-                            Spacer(Modifier.height(8.dp))
-                            Text("要换设定：新建一个对话页，在那边写入新的。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                },
-                confirmButton = {
-                    if (persona == null) {
-                        TextButton(onClick = {
-                            if (pName.isBlank()) {
-                                personaMsg = "名字不能为空"
-                            } else {
-                                val msg = onCreatePersona(pName, pRole, pStyle, pQuirks, pTaboo, packRaw)
-                                personaMsg = msg
-                                if (msg.contains("已强行")) {
-                                    pName = ""; pRole = ""; pStyle = ""; pQuirks = ""; pTaboo = ""; packRaw = ""; packName = ""
-                                    showPersonaDialog = false
-                                }
-                            }
-                        }) { Text("强行写入并锁定") }
-                    } else {
-                        TextButton(onClick = { showPersonaDialog = false }) { Text("知道了") }
-                    }
-                },
-                dismissButton = {
-                    if (persona == null) TextButton(onClick = { showPersonaDialog = false }) { Text("取消") }
-                },
-            )
+                }
+            }
         }
 
         LazyColumn(
