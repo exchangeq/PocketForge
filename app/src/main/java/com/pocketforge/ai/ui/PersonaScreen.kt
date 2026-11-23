@@ -57,6 +57,8 @@ fun PersonaScreen(
     onFetch: suspend (String) -> AgentEngine.PersonaPackContent,
     onImport: suspend (Uri) -> AgentEngine.PersonaPackContent,
     onRefreshCurrent: () -> Unit,
+    onStartChat: (String, String) -> Unit = { _, _ -> },
+    onOpenChat: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -119,6 +121,7 @@ fun PersonaScreen(
                     } else {
                         Text("${current.name} · 已锁定", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         Text("本对话内不可修改、不可删除；要换人设只能新建对话页。", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = onOpenChat, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)) { Text("进入人设对话 ›", fontSize = 10.5.sp) }
                     }
                 }
             }
@@ -267,18 +270,19 @@ fun PersonaScreen(
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { preview = null }) { Text("取消") }
                         Spacer(Modifier.width(6.dp))
-                        Button(onClick = {
-                            if (writeName.isBlank()) {
-                                status = "名字不能为空"
-                                return@Button
-                            }
+                        TextButton(onClick = {
+                            if (writeName.isBlank()) { status = "名字不能为空"; return@TextButton }
                             val msg = onCreate(writeName, "", "", "", "", c.raw)
                             status = msg
-                            if (msg.contains("已强行")) {
-                                preview = null
-                                onRefreshCurrent()
-                            }
-                        }) { Text("写入本对话并锁定") }
+                            if (msg.contains("已强行")) { preview = null; onRefreshCurrent() }
+                        }) { Text("写入当前对话") }
+                        Spacer(Modifier.width(6.dp))
+                        Button(onClick = {
+                            if (writeName.isBlank()) { status = "名字不能为空"; return@Button }
+                            onStartChat(writeName, c.raw)
+                            preview = null
+                            status = "已新开人设对话：" + writeName
+                        }) { Text("开新对话并锁定") }
                     }
                 }
             }
