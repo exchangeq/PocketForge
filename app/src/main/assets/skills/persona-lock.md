@@ -21,7 +21,7 @@
 ## 3. 人设包来源（ZIP 整包）
 
 - 仓库 `exchangeq/PocketForge-Personas`（可在设置里改），根目录 `index.json`；
-- 每个包是 zip，根下一层文件夹，里面必须有 `AI.md`：
+- 每个包是 `.aist`（就是 zip 改后缀），根下一层文件夹，里面必须有 `AI.md`：
   ```markdown
   - 名称：林枳 · 傲娇小男娘
   - 主设定：主设定.md
