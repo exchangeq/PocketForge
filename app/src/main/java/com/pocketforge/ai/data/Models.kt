@@ -33,6 +33,8 @@ data class AppConfig(
     // 发行版远程更新 + GitHub 访问
     val updateRepo: String = "exchangeq/PocketForge",
     val githubToken: String = "",
+    // 人设包仓库（zip 内含 AI.md，按需下载，不内置）
+    val personaRepo: String = "exchangeq/PocketForge-Personas",
     // 生图：pollinations（免费，无需 Key，默认 flux）| openai（兼容 /v1/images/generations）
     val imageProvider: String = "pollinations",
     val imageModel: String = "flux",
@@ -65,6 +67,7 @@ data class AppConfig(
         put("termuxHostKey", termuxHostKey)
         put("updateRepo", updateRepo)
         put("githubToken", githubToken)
+        put("personaRepo", personaRepo)
         put("imageProvider", imageProvider)
         put("imageModel", imageModel)
         put("imageSize", imageSize)
@@ -114,6 +117,7 @@ data class AppConfig(
             termuxHostKey = raw.optString("termuxHostKey", ""),
             updateRepo = raw.optString("updateRepo", "exchangeq/PocketForge"),
             githubToken = raw.optString("githubToken", ""),
+            personaRepo = raw.optString("personaRepo", "exchangeq/PocketForge-Personas"),
             imageProvider = raw.optString("imageProvider", "pollinations"),
             imageModel = raw.optString("imageModel", "flux"),
             imageSize = raw.optString("imageSize", "1024x1024"),
