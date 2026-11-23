@@ -217,7 +217,7 @@ fun SettingsScreen(
             singleLine = true,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("zip 内含 AI.md；改了仓库名后去对话页点「加载列表」重新拉", fontSize = 9.5.sp) },
+            supportingText = { Text(".aist 整包（zip 改后缀），内含 AI.md；改了仓库名去对话页点「加载列表」", fontSize = 9.5.sp) },
         )
         Text("生图通道", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
