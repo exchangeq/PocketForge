@@ -95,6 +95,8 @@ fun AppRoot() {
     var openTabs by remember { mutableStateOf(readTabs(prefs, engine.currentSessionKey(), engine.currentSessionTitle())) }
     var activeKey by remember { mutableStateOf(engine.currentSessionKey()) }
     var gallery by remember { mutableStateOf<List<com.pocketforge.ai.core.ImageClient.ImageMeta>>(emptyList()) }
+    var persona by remember { mutableStateOf(engine.persona()) }
+    var personaPacks by remember { mutableStateOf<List<com.pocketforge.ai.agent.AgentEngine.PersonaPack>>(emptyList()) }
 
     val legacyPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -144,12 +146,15 @@ fun AppRoot() {
         forced = engine.forceInjected()
         locks = engine.lockedDocs()
         gallery = engine.gallery()
+        persona = engine.persona()
         if (openTabs.isEmpty()) openTabs = readTabs(prefs, engine.currentSessionKey(), engine.currentSessionTitle())
         while (true) {
             hasStorage = engine.hasAllFilesAccess()
             delay(1200)
         }
     }
+
+    LaunchedEffect(activeKey) { persona = engine.persona() }
 
     val hasKey = config.apiKey.isNotBlank()
 
@@ -325,6 +330,19 @@ fun AppRoot() {
                     },
                     onCopyTranscript = { engine.copyTranscript() },
                     onGenerateImage = { prompt, size -> withContext(Dispatchers.IO) { engine.generateImage(prompt, size) } },
+                    persona = persona,
+                    onCreatePersona = { n, r, st, q, t, raw ->
+                        val msg = engine.createPersona(n, r, st, q, t, raw)
+                        persona = engine.persona()
+                        msg
+                    },
+                    packs = personaPacks,
+                    onLoadPacks = {
+                        val list = withContext(Dispatchers.IO) { engine.personaPacks(true) }
+                        personaPacks = list
+                        list
+                    },
+                    onFetchPack = { id -> withContext(Dispatchers.IO) { engine.fetchPersonaPack(id) } },
                     tabs = openTabs,
                     activeKey = activeKey,
                     onSelectTab = { key ->
