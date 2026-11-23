@@ -251,6 +251,9 @@ class ToolRegistry(
         }
         val file = sandbox.resolveWrite(path)
         requireWriteScope(file)
+        require(!file.absolutePath.replace('\\', '/').contains("/.pocketforge/persona")) {
+            "人物设定是锁定资源，不能用 fs_write 改（只能由界面写入，写入后不可更改）"
+        }
         file.parentFile?.mkdirs()
         require(file.absolutePath != sandbox.workspace().absolutePath) { "不能把工作区根目录当文件写" }
         val rel = sandbox.relative(file)
@@ -300,6 +303,9 @@ class ToolRegistry(
         val target = sandbox.resolveWrite(path)
         require(target.exists()) { "目标不存在：$path" }
         requireWriteScope(target)
+        require(!target.absolutePath.replace('\\', '/').contains("/.pocketforge/persona")) {
+            "人物设定是锁定资源，不能用 fs_delete 删"
+        }
         require(target.absolutePath != sandbox.workspace().absolutePath) { "拒绝删除工作区根目录" }
         val toTrash = args.optBoolean("toTrash", true)
         if (toTrash) {
