@@ -176,9 +176,9 @@ fun ChatScreen(
                         packRaw = c.raw
                         packName = c.name
                         pName = if (pName.isBlank()) c.name else pName
-                        personaMsg = "ZIP 已解压：${c.parts} 个文件，共 ${c.bytes} 字（// 注释已剔除），确认后点强行写入"
+                        personaMsg = "已解压：${c.parts} 个文件，共 ${c.bytes} 字（// 注释已剔除），确认后点强行写入"
                     }
-                    .onFailure { personaMsg = "ZIP 导入失败：" + (it.message ?: "读不出来") }
+                    .onFailure { personaMsg = "导入失败：" + (it.message ?: "读不出来") }
                 zipBusy = false
             }
         }
@@ -304,11 +304,11 @@ fun ChatScreen(
                                 )
                                 Spacer(Modifier.height(10.dp))
 
-                                Text("① 从仓库选包（不内置，现下现用）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Text("① 从仓库选包（.aist 整包，不内置）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        if (packList.isEmpty()) "点右边加载列表；含扩展包的主包会自动合并所有扩展包"
-                                        else "共 ${packList.size} 个包，扩展包会随主包自动合并",
+                                        if (packList.isEmpty()) "点右边加载列表；每个 .aist 内含 AI.md，主设定 + 全部扩展包自动合并"
+                                        else "共 ${packList.size} 个包，扩展包随主包自动合并",
                                         fontSize = 10.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f),
@@ -398,7 +398,7 @@ fun ChatScreen(
                                 }
                                 Spacer(Modifier.height(10.dp))
 
-                                Text("② 或导入本地 ZIP（.zip，里面有主设定 + 扩展包）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Text("② 或导入本地包（.aist / .zip）", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                                 Button(
                                     onClick = {
                                         runCatching { zipLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
@@ -406,9 +406,9 @@ fun ChatScreen(
                                     },
                                     enabled = !zipBusy && !packBusy,
                                     modifier = Modifier.fillMaxWidth(),
-                                ) { Text(if (zipBusy) "解压中…" else "选择 ZIP 人设包", fontSize = 12.sp) }
+                                ) { Text(if (zipBusy) "解压中…" else "选择本地人设包", fontSize = 12.sp) }
                                 Text(
-                                    "ZIP 内的 .md 会自动排序：主设定在前，名字带「扩展包 / extra / extension / 补充」的全部排后面合并；// 注释行统一剔除。",
+                                    ".aist 就是 zip 改后缀。解压后先读 AI.md：主设定在前，列出的扩展包按顺序叠加；没列到的 md 兜底追加；// 注释行统一剔除。",
                                     fontSize = 9.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
