@@ -379,6 +379,16 @@ fun ChatScreen(
                                                                 .padding(horizontal = 4.dp, vertical = 1.dp),
                                                         )
                                                     }
+                                                    if (pack.name.contains("病娇") || pack.desc.contains("病娇")) {
+                                                        Text(
+                                                            "病娇向",
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.error,
+                                                            modifier = Modifier
+                                                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        )
+                                                    }
                                                     if (pack.extCount > 0) {
                                                         Text(
                                                             "含 ${pack.extCount} 个扩展包",
