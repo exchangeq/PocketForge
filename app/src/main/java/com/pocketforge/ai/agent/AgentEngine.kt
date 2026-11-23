@@ -819,61 +819,251 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     // ---------------- 人设包（仓库按需下载，不内置） ----------------
 
-    data class PersonaPack(val id: String, val name: String, val desc: String, val files: List<String>)
-    data class PersonaPackContent(val name: String, val raw: String, val bytes: Int)
+    data class PersonaPack(
+        val id: String,
+        val name: String,
+        val desc: String,
+        val files: List<String>,
+        val group: String = "",
+        val type: String = "main",   // main | extension
+        val zip: String = "",
+        val extCount: Int = 0,
+    )
+
+    data class PersonaPackContent(val name: String, val raw: String, val bytes: Int, val parts: Int = 1)
 
     @Volatile private var packCache: List<PersonaPack> = emptyList()
 
-    private fun packBase(): String {
-        val repo = configRepo.config.value.updateRepo.ifBlank { "exchangeq/PocketForge" }
-        return "https://raw.githubusercontent.com/$repo/main/personas"
+    private fun packBases(): List<String> {
+        val cfg = configRepo.config.value
+        val primary = cfg.personaRepo.ifBlank { "exchangeq/PocketForge-Personas" }
+        val legacy = cfg.updateRepo.ifBlank { "exchangeq/PocketForge" }
+        return listOf(
+            "https://raw.githubusercontent.com/$primary/main",
+            "https://raw.githubusercontent.com/$legacy/main/personas",
+        ).distinct()
     }
 
     fun personaPacks(force: Boolean = false): List<PersonaPack> {
         if (!force && packCache.isNotEmpty()) return packCache
-        val body = httpGet(packBase() + "/index.json", 20_000)
-        val arr = JSONObject(body).optJSONArray("packs") ?: throw IllegalStateException("index.json 格式不对")
+        var body: String? = null
+        var base = ""
+        packBases().forEach { candidate ->
+            if (body != null) return@forEach
+            val text = runCatching { httpGet(candidate + "/index.json", 20_000) }.getOrNull()
+            if (text != null && text.contains("packs")) {
+                body = text
+                base = candidate
+            }
+        }
+        val raw = body ?: throw IllegalStateException("人设包仓库连不上（检查网络或设置里的仓库名）")
+        val arr = JSONObject(raw).optJSONArray("packs") ?: throw IllegalStateException("index.json 格式不对")
         val out = mutableListOf<PersonaPack>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val files = mutableListOf<String>()
             o.optJSONArray("files")?.let { fa -> for (j in 0 until fa.length()) files.add(fa.optString(j)) }
-            if (files.isEmpty()) o.optString("file").takeIf { it.isNotBlank() }?.let { files.add(it) }
+            val single = o.optString("file").ifBlank { o.optString("zip") }
+            if (files.isEmpty() && single.isNotBlank()) files.add(single)
+            val fmt = o.optString("format").ifBlank {
+                if (single.endsWith(".zip", true)) "zip" else "md"
+            }
             val id = o.optString("id").ifBlank { "pack-$i" }
-            out.add(PersonaPack(id, o.optString("name", id), o.optString("desc"), files))
+            val type = o.optString("type").ifBlank {
+                if (o.optString("name").contains("扩展包")) "extension" else "main"
+            }
+            out.add(
+                PersonaPack(
+                    id = id,
+                    name = o.optString("name", id),
+                    desc = o.optString("desc"),
+                    files = files,
+                    group = o.optString("group", id.substringBefore('-')),
+                    type = type,
+                    zip = if (fmt == "zip") single else o.optString("zip"),
+                    extCount = o.optInt("extCount", 0),
+                )
+            )
         }
         packCache = out
+        packBaseOverride = base
         return out
     }
 
-    fun fetchPersonaPack(id: String): PersonaPackContent {
-        val pack = personaPacks().firstOrNull { it.id == id }
-            ?: throw IllegalStateException("没找到人设包：$id")
-        val sb = StringBuilder()
-        pack.files.forEach { name ->
-            val text = httpGet(packBase() + "/" + name, 30_000)
-            sb.append(text.trim()).append("\n\n---\n\n")
+    @Volatile private var packBaseOverride: String = ""
+
+    private fun packUrl(path: String): String =
+        (packBaseOverride.ifBlank { packBases().first() }).trimEnd('/') + "/" + path.trimStart('/')
+
+    /** AI.md 清单：名称 / 主设定 / 扩展包（可多条） */
+    private data class Manifest(val name: String?, val main: String?, val extensions: List<String>)
+
+    private fun parseManifest(text: String?): Manifest {
+        if (text.isNullOrBlank()) return Manifest(null, null, emptyList())
+        var name: String? = null
+        var main: String? = null
+        val ext = mutableListOf<String>()
+        text.lines().forEach { line ->
+            val t = line.trim().removePrefix("-").removePrefix("*").trim()
+            val sep = when {
+                t.contains('：') -> '：'
+                t.contains(':') -> ':'
+                else -> null
+            } ?: return@forEach
+            val key = t.substringBefore(sep).trim().lowercase(Locale.US)
+            val value = t.substringAfter(sep).trim().trim('《', '》', '`')
+            if (value.isBlank()) return@forEach
+            when {
+                key.contains("名称") || key == "name" || key.contains("title") -> if (name == null) name = value
+                key.contains("主设定") || key == "main" -> if (main == null) main = value
+                key.contains("扩展") || key == "ext" || key.contains("extension") -> ext.add(value)
+            }
         }
-        // 去掉作者注释行（// 开头），其余原样保留
-        val cleaned = sb.toString().lines().filterNot { it.trimStart().startsWith("//") }.joinToString("\n").trim()
-        require(cleaned.length > 32) { "包内容太短，可能下载失败" }
-        return PersonaPackContent(pack.name, cleaned, cleaned.length)
+        return Manifest(name, main, ext)
     }
 
-    private fun httpGet(url: String, timeoutMs: Int): String {
+    private fun isExtName(name: String): Boolean {
+        val lower = name.lowercase(Locale.US)
+        return name.contains("扩展") || lower.contains("extra") || lower.contains("extension") || name.contains("补充")
+    }
+
+    private data class ZipPack(val name: String, val parts: List<Pair<String, String>>, val mainCount: Int, val extCount: Int)
+
+    /**
+     * 解压整包：
+     *  1. 先找 AI.md，按清单决定主设定与扩展包顺序；
+     *  2. 清单缺项时按文件名兜底（主设定 / main，扩展包 / extra / extension / 补充）；
+     *  3. 清单没列到的 .md 也当扩展追加，不丢内容；
+     *  4. AI.md / README / index.json 本身不注入正文。
+     */
+    private fun unzipMd(bytes: ByteArray): ZipPack {
+        val entries = mutableListOf<Pair<String, String>>()
+        var total = 0
+        java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (!entry.isDirectory) {
+                    val name = entry.name.replace('\\', '/')
+                    val short = name.substringAfterLast('/')
+                    val lower = name.lowercase(Locale.US)
+                    if (short.startsWith(".") || name.contains("__MACOSX")) continue
+                    if (!(lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt"))) continue
+                    if (short.equals("index.json", true) || short.equals("README.md", true)) continue
+                    val text = zip.readBytes().toString(Charsets.UTF_8)
+                    zip.closeEntry()
+                    total += text.length
+                    require(total <= 2_000_000) { "ZIP 里的文本太多（>2MB），先精简" }
+                    entries.add(name to text)
+                }
+            }
+        }
+        require(entries.size <= 80) { "ZIP 里文件太多（>80）" }
+        val manifestEntry = entries.firstOrNull { it.first.substringAfterLast('/').equals("AI.md", true) }
+        val manifest = parseManifest(manifestEntry?.second)
+        val content = entries.filterNot { it.first.substringAfterLast('/').equals("AI.md", true) }
+
+        val mainList = when {
+            manifest.main != null -> content.filter { it.first.substringAfterLast('/').equals(manifest.main, true) }
+            else -> content.filterNot { isExtName(it.first.substringAfterLast('/')) }
+        }.ifEmpty { content.filterNot { isExtName(it.first.substringAfterLast('/')) } }
+
+        val extList = mutableListOf<Pair<String, String>>()
+        manifest.extensions.forEach { wanted ->
+            val hit = content.firstOrNull { it.first.substringAfterLast('/').equals(wanted, true) }
+            if (hit != null && hit !in mainList) extList.add(hit)
+        }
+        content.filter { isExtName(it.first.substringAfterLast('/')) && it !in mainList && it !in extList }
+            .forEach { extList.add(it) }
+
+        val leftovers = content.filterNot { it in mainList || it in extList }
+        val ordered = mainList + extList + leftovers
+        val fallbackName = manifest.name
+            ?: content.firstOrNull()?.second?.lineSequence()?.firstOrNull { it.trim().startsWith("#") }
+                ?.trim()?.trimStart('#')?.trim()
+            ?: "ZIP 人设包"
+        return ZipPack(fallbackName, ordered, mainList.size, extList.size)
+    }
+
+    /**
+     * 下载一个人设包：
+     *  - zip 优先：下载整包 → 解压 → AI.md 决定主设定与扩展包顺序；
+     *  - 旧格式：files 数组里的 md 直接拼接，并自动带上同 group 的扩展包；
+     *  - // 注释行在合并时统一剔除。
+     */
+    fun fetchPersonaPack(id: String): PersonaPackContent {
+        val all = personaPacks()
+        val pack = all.firstOrNull { it.id == id } ?: throw IllegalStateException("没找到人设包：$id")
+        require(pack.type != "extension") { "「${pack.name}」是扩展包，请选对应主包，主包会自动合并扩展包" }
+
+        if (pack.zip.isNotBlank()) {
+            val bytes = httpGetBytes(packUrl(pack.zip), 90_000)
+            val fromZip = unzipMd(bytes)
+            require(fromZip.parts.isNotEmpty()) { "ZIP 里没找到可用的 .md 设定" }
+            val merged = mergeParts(fromZip.parts)
+            val label = if (fromZip.extCount > 0) "${pack.name} · 含 ${fromZip.extCount} 个扩展包" else pack.name
+            return PersonaPackContent(label, merged, merged.length, fromZip.parts.size)
+        }
+
+        val extensions = all.filter { it.type == "extension" && (it.group == pack.group || it.group == pack.id) }
+        val parts = mutableListOf<Pair<String, String>>()
+        pack.files.forEach { name -> parts.add(name to httpGet(packUrl(name), 30_000)) }
+        extensions.sortedBy { it.name }.forEach { ext ->
+            ext.files.forEach { name -> parts.add(ext.name to httpGet(packUrl(name), 30_000)) }
+        }
+        val merged = mergeParts(parts)
+        return PersonaPackContent(pack.name, merged, merged.length, parts.size)
+    }
+
+    /** 从本地 ZIP 导入：界面选中 .zip，直接解压解析 AI.md */
+    fun importPersonaZip(uri: Uri): PersonaPackContent {
+        val input = appContext.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("打不开这个 ZIP")
+        val bytes = input.use { it.readBytes() }
+        require(bytes.size <= 12 * 1024 * 1024) { "ZIP 超过 12MB，先精简一下" }
+        val pack = unzipMd(bytes)
+        require(pack.parts.isNotEmpty()) { "ZIP 里没找到 .md 设定文件" }
+        val merged = mergeParts(pack.parts)
+        return PersonaPackContent(pack.name, merged, merged.length, pack.parts.size)
+    }
+
+    private fun mergeParts(parts: List<Pair<String, String>>): String {
+        val sb = StringBuilder()
+        parts.forEachIndexed { index, (name, text) ->
+            val cleaned = cleanPersonaText(text)
+            if (cleaned.length < 8) return@forEachIndexed
+            if (sb.isNotEmpty()) sb.append("\n\n---\n\n")
+            if (index > 0) sb.append("## 扩展包：").append(name.substringAfterLast('/').substringBeforeLast('.')).append("\n\n")
+            sb.append(cleaned)
+            if (sb.length > 16000) return sb.toString().take(16000)
+        }
+        val merged = sb.toString().trim()
+        require(merged.length > 32) { "内容太短，可能文件是空的" }
+        return if (merged.length > 16000) merged.take(16000) else merged
+    }
+
+    /** 剔除 // 注释行与零宽字符，保留 Markdown 结构 */
+    private fun cleanPersonaText(text: String): String =
+        text.lines()
+            .filterNot { it.trimStart().startsWith("//") }
+            .joinToString("\n")
+            .replace("\uFEFF", "")
+            .trim()
+
+    private fun httpGetBytes(url: String, timeoutMs: Int): ByteArray {
         val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         return try {
             conn.connectTimeout = 12_000
             conn.readTimeout = timeoutMs
-            conn.setRequestProperty("User-Agent", "PocketForge/1.13 (Android)")
-            conn.setRequestProperty("Cache-Control", "no-cache")
+            conn.setRequestProperty("User-Agent", "PocketForge/1.14 (Android)")
             val code = conn.responseCode
             if (code !in 200..299) throw IllegalStateException("HTTP $code：$url")
-            conn.inputStream.bufferedReader().use { it.readText() }
+            conn.inputStream.use { it.readBytes() }
         } finally {
             runCatching { conn.disconnect() }
         }
     }
+
+    private fun httpGet(url: String, timeoutMs: Int): String = httpGetBytes(url, timeoutMs).toString(Charsets.UTF_8)
 
     fun imageDir(): File = File(runCatching { sandbox.workspace() }.getOrElse { appContext.filesDir }, "assets/images")
 
