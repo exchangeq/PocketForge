@@ -343,6 +343,7 @@ fun AppRoot() {
                         list
                     },
                     onFetchPack = { id -> withContext(Dispatchers.IO) { engine.fetchPersonaPack(id) } },
+                    onImportZip = { uri -> withContext(Dispatchers.IO) { engine.importPersonaZip(uri) } },
                     tabs = openTabs,
                     activeKey = activeKey,
                     onSelectTab = { key ->
