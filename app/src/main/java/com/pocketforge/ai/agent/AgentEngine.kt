@@ -54,6 +54,7 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
     private val skills = SkillLibrary(appContext)
     private val client = AiClient()
     private val sessionStore = SessionStore(File(appContext.filesDir, "sessions"))
+    private val personas = com.pocketforge.ai.data.PersonaStore(appContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var stopRequested = false
@@ -799,6 +800,81 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
 
     // ---------------- 生图 ----------------
 
+    // ---------------- 人物设定（写入即锁定） ----------------
+
+    fun persona(key: String = sessionKey): com.pocketforge.ai.data.PersonaStore.Persona? = personas.get(key)
+
+    fun personaSummary(key: String = sessionKey): String? = personas.summary(key)
+
+    /** 只能给还没有设定的对话页写入；已有设定会被拒绝 */
+    fun createPersona(
+        name: String,
+        role: String,
+        style: String,
+        quirks: String,
+        taboo: String,
+        raw: String = "",
+        key: String = sessionKey,
+    ): String = personas.create(key, name, role, style, quirks, taboo, raw)
+
+    // ---------------- 人设包（仓库按需下载，不内置） ----------------
+
+    data class PersonaPack(val id: String, val name: String, val desc: String, val files: List<String>)
+    data class PersonaPackContent(val name: String, val raw: String, val bytes: Int)
+
+    @Volatile private var packCache: List<PersonaPack> = emptyList()
+
+    private fun packBase(): String {
+        val repo = configRepo.config.value.updateRepo.ifBlank { "exchangeq/PocketForge" }
+        return "https://raw.githubusercontent.com/$repo/main/personas"
+    }
+
+    fun personaPacks(force: Boolean = false): List<PersonaPack> {
+        if (!force && packCache.isNotEmpty()) return packCache
+        val body = httpGet(packBase() + "/index.json", 20_000)
+        val arr = JSONObject(body).optJSONArray("packs") ?: throw IllegalStateException("index.json 格式不对")
+        val out = mutableListOf<PersonaPack>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val files = mutableListOf<String>()
+            o.optJSONArray("files")?.let { fa -> for (j in 0 until fa.length()) files.add(fa.optString(j)) }
+            if (files.isEmpty()) o.optString("file").takeIf { it.isNotBlank() }?.let { files.add(it) }
+            val id = o.optString("id").ifBlank { "pack-$i" }
+            out.add(PersonaPack(id, o.optString("name", id), o.optString("desc"), files))
+        }
+        packCache = out
+        return out
+    }
+
+    fun fetchPersonaPack(id: String): PersonaPackContent {
+        val pack = personaPacks().firstOrNull { it.id == id }
+            ?: throw IllegalStateException("没找到人设包：$id")
+        val sb = StringBuilder()
+        pack.files.forEach { name ->
+            val text = httpGet(packBase() + "/" + name, 30_000)
+            sb.append(text.trim()).append("\n\n---\n\n")
+        }
+        // 去掉作者注释行（// 开头），其余原样保留
+        val cleaned = sb.toString().lines().filterNot { it.trimStart().startsWith("//") }.joinToString("\n").trim()
+        require(cleaned.length > 32) { "包内容太短，可能下载失败" }
+        return PersonaPackContent(pack.name, cleaned, cleaned.length)
+    }
+
+    private fun httpGet(url: String, timeoutMs: Int): String {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        return try {
+            conn.connectTimeout = 12_000
+            conn.readTimeout = timeoutMs
+            conn.setRequestProperty("User-Agent", "PocketForge/1.13 (Android)")
+            conn.setRequestProperty("Cache-Control", "no-cache")
+            val code = conn.responseCode
+            if (code !in 200..299) throw IllegalStateException("HTTP $code：$url")
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            runCatching { conn.disconnect() }
+        }
+    }
+
     fun imageDir(): File = File(runCatching { sandbox.workspace() }.getOrElse { appContext.filesDir }, "assets/images")
 
     fun gallery(): List<com.pocketforge.ai.core.ImageClient.ImageMeta> =
@@ -1220,6 +1296,10 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         }
         if (config.skillsGate) {
             appendLine("8. 技能闸门已开启：没读完技能说明时，写文件会被工具层直接拒绝。")
+        }
+        personas.get(sessionKey)?.let { persona ->
+            appendLine()
+            append(persona.block())
         }
         if (config.systemExtra.isNotBlank()) {
             appendLine()
