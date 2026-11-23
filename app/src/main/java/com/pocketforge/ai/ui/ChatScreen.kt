@@ -237,7 +237,10 @@ fun ChatScreen(
                     FilterChip(
                         selected = key == activeKey,
                         onClick = { if (key != activeKey) onSelectTab(key) },
-                        label = { Text(title.take(8), fontSize = 11.sp) },
+                        label = {
+                            val short = if (title.startsWith("新对话")) title.removePrefix("新对话").trim().take(8).ifBlank { "新对话" } else title.take(8)
+                            Text(short, fontSize = 11.sp)
+                        },
                         modifier = Modifier.padding(vertical = 2.dp),
                     )
                 }
@@ -248,7 +251,7 @@ fun ChatScreen(
                 }
             }
         }
-        pendingTask?.let { goal ->
+        pendingTask?.takeIf { state.messages.isEmpty() }?.let { goal ->
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(10.dp),
