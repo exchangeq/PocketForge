@@ -206,6 +206,12 @@ fun ImageScreen(
                 }
             }
 
+            if (busy) {
+                item {
+                    Text("对话那边正在跑任务，画图按钮暂时不可点；点对话里的停止后再回来。", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             if (result.isNotBlank()) {
                 item {
                     Text(
