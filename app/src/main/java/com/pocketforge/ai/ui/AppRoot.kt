@@ -1,6 +1,7 @@
 package com.pocketforge.ai.ui
 
 import android.content.Context
+import java.io.File
 import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
@@ -270,7 +271,8 @@ fun AppRoot() {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val title = "新对话 " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                        val who = persona?.name?.substringBefore(" ·")?.ifBlank { null } ?: "新对话"
+                        val title = who + " · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
                         val key = engine.newSession(title)
                         openTabs = pushTab(openTabs, key, title)
                         activeKey = key
@@ -355,7 +357,8 @@ fun AppRoot() {
                         }
                     },
                     onNewTab = {
-                        val title = "新对话 " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                        val who = persona?.name?.substringBefore(" ·")?.ifBlank { null } ?: "新对话"
+                        val title = who + " · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
                         val key = engine.newSession(title)
                         openTabs = pushTab(openTabs, key, title)
                         activeKey = key
@@ -373,8 +376,29 @@ fun AppRoot() {
                     onDiscardPending = { engine.discardPendingTask() },
                     onExport = {
                         engine.onIo {
-                            val msg = engine.exportSession()
+                            runCatching {
+                                val file = engine.exportSessionJsonFile()
+                                withContext(Dispatchers.Main) {
+                                    shareChatFile(context, file)
+                                    Toast.makeText(context, "已导出 ${file.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            }.onFailure {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "导出失败：" + (it.message ?: ""), Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onImport = { uri ->
+                        engine.onIo {
+                            val msg = engine.importSession(uri)
+                            val key = engine.currentSessionKey()
+                            val title = engine.currentSessionTitle()
                             withContext(Dispatchers.Main) {
+                                activeKey = key
+                                openTabs = pushTab(openTabs, key, title)
+                                writeTabs(prefs, openTabs)
+                                sessionList = engine.sessions()
                                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         }
@@ -773,4 +797,15 @@ private fun writeTabs(prefs: android.content.SharedPreferences, list: List<Pair<
         list.forEach { (k, t) -> arr.put(org.json.JSONArray().put(k).put(t)) }
         prefs.edit().putString("chat_tabs", arr.toString()).apply()
     }
+}
+
+
+private fun shareChatFile(context: Context, file: File) {
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "application/json"
+        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(android.content.Intent.createChooser(intent, "导出对话"))
 }

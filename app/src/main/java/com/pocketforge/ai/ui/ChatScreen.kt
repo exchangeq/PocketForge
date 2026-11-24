@@ -1,5 +1,6 @@
 package com.pocketforge.ai.ui
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -100,6 +101,7 @@ fun ChatScreen(
     onStop: () -> Unit,
     onClear: () -> Unit,
     onExport: () -> Unit = {},
+    onImport: (Uri) -> Unit = {},
     onRewind: () -> String = { "" },
     onSwitchSession: () -> Unit = {},
     onEditMessage: (String, String) -> String = { _, _ -> "" },
@@ -125,6 +127,9 @@ fun ChatScreen(
     onNewTab: () -> Unit = {},
     onOpenSettings: () -> Unit,
 ) {
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onImport(uri)
+    }
     var input by remember { mutableStateOf("") }
     val noRecall = state.noRecall
     var editing by remember { mutableStateOf<MsgUi?>(null) }
@@ -238,7 +243,7 @@ fun ChatScreen(
                         selected = key == activeKey,
                         onClick = { if (key != activeKey) onSelectTab(key) },
                         label = {
-                            val short = if (title.startsWith("新对话")) title.removePrefix("新对话").trim().take(8).ifBlank { "新对话" } else title.replace("人设对话 ", "").replace("对话 ", "").take(11)
+                            val short = if (title.startsWith("新对话")) title.removePrefix("新对话").trim().take(8).ifBlank { "新对话" } else title.replace("人设对话 ", "").replace("对话 ", "").take(16)
                             Text(short, fontSize = 11.sp)
                         },
                         modifier = Modifier.padding(vertical = 2.dp),
@@ -582,6 +587,9 @@ fun ChatScreen(
             }
             TextButton(onClick = onExport, enabled = state.messages.isNotEmpty()) {
                             Text("导出", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                        TextButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "application/x-ndjson", "*/*")) }) {
+                            Text("导入", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                         }
                         TextButton(onClick = onClear) {
                             Text("清空本会话", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

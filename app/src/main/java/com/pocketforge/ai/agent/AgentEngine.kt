@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.pocketforge.ai.core.Sandbox
 import com.pocketforge.ai.data.AppConfig
 import com.pocketforge.ai.data.ChatMessage
+import com.pocketforge.ai.data.ChatTransfer
 import com.pocketforge.ai.data.ConfigRepository
 import com.pocketforge.ai.data.MsgUi
 import com.pocketforge.ai.data.SessionStore
@@ -1161,6 +1162,54 @@ class AgentEngine(context: Context, private val configRepo: ConfigRepository) {
         file.writeText(md.toString())
         "已导出：exports/" + file.name + "（" + md.length + " 字符）"
     }.getOrElse { "导出失败：" + it.message }
+
+    /** 写出一份可分享的完整会话 JSON（含人物设定快照）。 */
+    fun exportSessionJsonFile(): File {
+        val dir = File(appContext.getExternalFilesDir(null) ?: sandbox.workspace(), "exports").apply { mkdirs() }
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        val file = File(dir, "chat-$stamp.json")
+        file.writeText(
+            ChatTransfer.encode(
+                title = sessionStore.title(sessionKey, if (sessionKey == "main") "主对话" else sessionKey),
+                persona = personas.get(sessionKey),
+                messages = history,
+                model = configRepo.config.value.model,
+            )
+        )
+        return file
+    }
+
+    /** 导出完整会话 JSON，可被 PersonaChat / PocketForge 再导入。 */
+    fun exportSessionJson(): String = runCatching {
+        val file = exportSessionJsonFile()
+        "已导出：${file.name}（${history.count { it.role == "user" || it.role == "assistant" }} 条消息）"
+    }.getOrElse { "导出失败：" + (it.message ?: "未知错误") }
+
+    /** 从 JSON / JSONL 导入一个会话页，并恢复人物设定快照。 */
+    fun importSession(uri: Uri): String = try {
+        val raw = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            ?: throw IllegalStateException("读不到文件")
+        val data = ChatTransfer.decode(raw)
+        sessionStore.save(sessionKey, history)
+        val key = "chat-" + System.currentTimeMillis().toString(36) + "-" + (0..999).random()
+        sessionStore.save(key, data.messages)
+        sessionStore.setTitle(key, data.title)
+        runCatching {
+            personas.create(
+                key,
+                name = data.name,
+                role = data.role.ifBlank { "导入角色" },
+                style = data.style.ifBlank { "保持原角色语气" },
+                quirks = data.quirks,
+                taboo = data.taboo,
+                raw = data.raw,
+            )
+        }
+        switchSession(key)
+        "已导入：${data.name} · ${data.messages.size} 条消息"
+    } catch (t: Throwable) {
+        "导入失败：" + (t.message ?: "格式不支持")
+    }
 
     /** 存储占用概览 */
     fun storageUsage(): String = runCatching {
