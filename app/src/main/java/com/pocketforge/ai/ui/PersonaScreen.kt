@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -155,7 +158,7 @@ fun PersonaScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("全部", "常规", "二次元", "病娇", "囚禁").forEach { f ->
                     FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f, fontSize = 11.sp) })
                 }
@@ -175,16 +178,17 @@ fun PersonaScreen(
         items(visible, key = { it.id }) { pack ->
             val isY = pack.name.contains("病娇") || pack.desc.contains("病娇")
             val isQ = pack.name.contains("囚禁") || pack.desc.contains("囚禁")
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(10.dp),
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(pack.name, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text(pack.desc, fontSize = 9.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(pack.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(pack.desc, fontSize = 9.8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, modifier = Modifier.padding(top = 1.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                             if (pack.zip.isNotBlank()) {
                                 Badge("AIST", MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
                             }
