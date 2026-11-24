@@ -54,7 +54,21 @@ class UpdateManager(
         else @Suppress("DEPRECATION") info.versionCode.toLong()
     }.getOrDefault(0L)
 
+    @Volatile private var lastCheckAt = 0L
+    @Volatile private var lastResult: CheckResult? = null
+
+    /** 20 秒内复用上次结果，避免连点触发 GitHub 限流。 */
     fun check(): CheckResult {
+        val now = System.currentTimeMillis()
+        val cached = lastResult
+        if (cached != null && now - lastCheckAt < 20_000) return cached
+        val r = checkNow()
+        lastCheckAt = now
+        lastResult = r
+        return r
+    }
+
+    private fun checkNow(): CheckResult {
         val cfg = configProvider()
         val repo = cfg.updateRepo.ifBlank { "exchangeq/PocketForge" }.trim()
             .removePrefix("https://").removePrefix("http://")
@@ -74,7 +88,9 @@ class UpdateManager(
             val code = conn.responseCode
             if (code !in 200..299) {
                 val err = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
-                return CheckResult(false, current, null, "查询失败：HTTP $code ${err.take(160)}")
+                return CheckResult(false, current, null,
+                    if (code == 403 || code == 429) "请求太频繁，被 GitHub 限流了，等 1 分钟再试"
+                    else "查询失败：HTTP $code ${err.take(120)}")
             }
             val raw = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
@@ -126,7 +142,11 @@ class UpdateManager(
         return DownloaderBridge.handoff(context, url, "PocketForge-${release.tag}.apk")
     }
 
+    private val downloading = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun download(onProgress: ((Int, String) -> Unit)? = null): File {
+        if (!downloading.compareAndSet(false, true)) throw IllegalStateException("已有更新包正在下载，请等它完成")
+        try {
         val cfg = configProvider()
         val result = check()
         val release = result.release ?: throw IllegalStateException(result.message)
@@ -151,6 +171,7 @@ class UpdateManager(
         if (target.exists()) target.delete()
         tmp.renameTo(target)
         return target
+        } finally { downloading.set(false) }
     }
 
     private fun singleDownload(

@@ -97,6 +97,7 @@ fun PersonaScreen(
             "常规" -> !p.name.contains("病娇") && !p.desc.contains("病娇") && !p.name.contains("囚禁") && !p.desc.contains("囚禁")
             "病娇" -> p.name.contains("病娇") || p.desc.contains("病娇")
             "囚禁" -> p.name.contains("囚禁") || p.desc.contains("囚禁")
+            "二次元" -> p.group in setOf("magical","mecha-pilot","cyber-ninja","hunter","onmyoji","dragon-princess","star-idol","ghost-maid","isekai-knight","time-traveler")
             else -> true
         }
         hitQuery && hitFilter
@@ -155,7 +156,7 @@ fun PersonaScreen(
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("全部", "常规", "病娇", "囚禁").forEach { f ->
+                listOf("全部", "常规", "二次元", "病娇", "囚禁").forEach { f ->
                     FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f, fontSize = 11.sp) })
                 }
             }
