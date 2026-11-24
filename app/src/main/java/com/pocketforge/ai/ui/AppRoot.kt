@@ -396,6 +396,7 @@ fun AppRoot() {
                             val title = engine.currentSessionTitle()
                             withContext(Dispatchers.Main) {
                                 activeKey = key
+                                persona = engine.persona()
                                 openTabs = pushTab(openTabs, key, title)
                                 writeTabs(prefs, openTabs)
                                 sessionList = engine.sessions()
